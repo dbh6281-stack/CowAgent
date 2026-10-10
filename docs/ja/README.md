@@ -260,7 +260,7 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 GitHub で [Issue を報告](https://github.com/zhayujie/CowAgent/issues) したり、下記 QR コードをスキャンして WeChat コミュニティに参加することもできます：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/open-community.png" />
 
 <br/>
 

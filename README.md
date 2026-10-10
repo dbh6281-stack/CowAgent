@@ -260,7 +260,7 @@ Join our [**Discord server**](https://discord.gg/9U8eA8v9TR) to ask questions, s
 
 You can also [file an issue](https://github.com/zhayujie/CowAgent/issues) on GitHub, or scan the QR code below to join our WeChat group:
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png">
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/open-community.png">
 
 <br/>
 

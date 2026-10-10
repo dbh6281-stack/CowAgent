@@ -261,7 +261,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 也歡迎在 GitHub [提交 Issue](https://github.com/zhayujie/CowAgent/issues)，或掃碼加入微信開源交流群：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/open-community.png" />
 
 也可透過以下方式獲取支援：
 
@@ -280,7 +280,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 ## 🏢 企業服務
 
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg" /></a>
+<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/link-ai-intro.png" /></a>
 
 > [LinkAI](https://link-ai.tech/) 是面向企業和個人的一站式 AI 智慧體平臺，為 CowAgent 提供雲端託管和企業級支援：
 >
@@ -290,7 +290,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 **產品諮詢和企業服務** 可聯絡產品客服：
 
-<img width="130" src="https://cdn.link-ai.tech/portal/linkai-customer-service.png" />
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/customer-service.png" />
 
 <br/>
 

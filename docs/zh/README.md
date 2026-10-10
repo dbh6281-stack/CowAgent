@@ -257,7 +257,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 微信扫码添加小助手，加入 CowAgent 开源项目交流群：
 
-<img width="130" src="https://img-1317903499.cos.ap-guangzhou.myqcloud.com/docs/open-community.png" />
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/open-community.png" />
 
 也欢迎在 GitHub [提交 Issue](https://github.com/zhayujie/CowAgent/issues)，或加入 [**Discord 服务器**](https://discord.gg/9U8eA8v9TR) 交流：
 
@@ -280,7 +280,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 ## 🏢 企业服务
 
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.link-ai.tech/image/link-ai-intro.jpg" /></a>
+<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/link-ai-intro.png" /></a>
 
 > [LinkAI](https://link-ai.tech/) 是面向企业和个人的一站式 AI 智能体平台，为 CowAgent 提供云端托管和企业级支持：
 >
@@ -290,7 +290,7 @@ CowAgent 支持国内外主流厂商的大语言模型。**文本对话、图像
 
 **产品咨询和企业服务** 可联系产品客服：
 
-<img width="130" src="https://cdn.link-ai.tech/portal/linkai-customer-service.png" />
+<img width="130" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/customer-service.png" />
 
 <br/>
 
