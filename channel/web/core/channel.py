@@ -160,6 +160,73 @@ class WebChannel(ChatChannel):
             logger.debug(f"[WebChannel] _fetch_latest_pair_seqs failed: {e}")
             return {"user_seq": None, "bot_seq": None}
 
+    def _fetch_last_turn_usage(self, session_id: str, agent_id: str = None):
+        """The current run's provider-reported token usage, or None.
+
+        Prefers the run-level accumulator (``agent.run_usage_total``), which
+        sums EVERY LLM call this user question triggered — a multi-round
+        tool-call answer makes several calls, each re-sending the history, and
+        users expect the bubble to reflect the whole exchange, not just the
+        final call. Falls back to ``agent.last_usage`` (the last single call)
+        when the accumulator is absent. Best-effort: any miss is None.
+        """
+        try:
+            from bridge.bridge import Bridge
+            agent = Bridge().get_agent_bridge().peek_agent(session_id, agent_id=agent_id)
+            if agent is None:
+                return None
+            total = getattr(agent, "run_usage_total", None)
+            if isinstance(total, dict) and (total.get("input") or total.get("output")):
+                inp = int(total.get("input") or 0)
+                out = int(total.get("output") or 0)
+                return {
+                    "input": inp,
+                    "output": out,
+                    "total": inp + out,
+                    "cache_hit": int(total.get("cache_hit") or 0),
+                    "cache_miss": int(total.get("cache_miss") or 0),
+                }
+            usage = getattr(agent, "last_usage", None)
+            if not isinstance(usage, dict):
+                return None
+            inp = int(usage.get("prompt_tokens") or 0)
+            out = int(usage.get("completion_tokens") or 0)
+            total_tok = int(usage.get("total_tokens") or 0)
+            if not (inp or out or total_tok):
+                return None
+            return {
+                "input": inp,
+                "output": out,
+                "total": total_tok or (inp + out),
+                "cache_hit": int(usage.get("prompt_cache_hit_tokens") or 0),
+                "cache_miss": int(usage.get("prompt_cache_miss_tokens") or 0),
+            }
+        except Exception as e:
+            logger.debug(f"[WebChannel] last-turn usage lookup failed: {e}")
+            return None
+
+    def _persist_turn_usage(self, session_id: str, agent_id: str, request_id: str = None):
+        """Write the run's token usage into the last assistant message's extras.
+
+        Keeps the bubble's token badge alive across refresh / session switch /
+        restart; the live SSE ``done`` event alone is ephemeral. Stored as
+        ``extras["usage"]`` — the same channel TTS uses for ``extras["audio"]``.
+        """
+        try:
+            usage = self._fetch_last_turn_usage(session_id, agent_id)
+            if not usage:
+                return
+            from agent.memory import get_conversation_store
+            from agent.registry import get_agent_registry
+            profile = get_agent_registry().get(agent_id) if agent_id else None
+            workspace = profile.workspace if profile else None
+            if not workspace:
+                return
+            store = get_conversation_store(workspace)
+            store.attach_extras_to_last_assistant(session_id, {"usage": usage})
+        except Exception as e:
+            logger.debug(f"[WebChannel] turn usage persist skipped: {e}")
+
     def send(self, reply: Reply, context: Context):
         try:
             if reply.type in self.NOT_SUPPORT_REPLYTYPE:
@@ -257,8 +324,16 @@ class WebChannel(ChatChannel):
                     "timestamp": time.time(),
                     "user_seq": seqs.get("user_seq"),
                     "bot_seq": seqs.get("bot_seq"),
+                    "usage": self._fetch_last_turn_usage(
+                        session_id, agent_id
+                    ),
                 })
                 logger.debug(f"SSE done sent for request {request_id}")
+                # Persist this run's usage onto the assistant message's extras,
+                # so the bubble keeps its token badge after a page refresh,
+                # session switch or restart. Without this the badge only lives
+                # in the live SSE stream. Mirrors the TTS attach path below.
+                self._persist_turn_usage(session_id, agent_id, request_id)
                 # Auto-trigger TTS once the bot finishes its text reply. The
                 # synthesis runs in the background so the chat stream is never
                 # blocked; the resulting audio URL is pushed via a follow-up

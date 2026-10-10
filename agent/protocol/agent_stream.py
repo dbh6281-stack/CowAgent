@@ -143,6 +143,27 @@ def _cache_hit_tokens(usage: Dict[str, Any]) -> int:
         return 0
 
 
+def _cache_miss_tokens(usage: Dict[str, Any], hit: int = None) -> int:
+    """Prompt tokens NOT served from the prefix cache (full-price input).
+
+    Prefers the provider's own field (DeepSeek ``prompt_cache_miss_tokens``).
+    Falls back to ``prompt_tokens - hit`` when the provider only reports the
+    hit side — DeepSeek's prompt_tokens is the whole input including the
+    cached portion, so the subtraction is exact. Returns 0 when neither is
+    available (the caller treats 0 as "unknown").
+    """
+    try:
+        explicit = usage.get("prompt_cache_miss_tokens")
+        if explicit is not None:
+            return int(explicit)
+        if hit is None:
+            hit = _cache_hit_tokens(usage)
+        prompt = int(usage.get("prompt_tokens") or 0)
+        return max(0, prompt - int(hit or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 # Cap for the 429 incremental backoff. The base curve is 30 + retry_count*15,
 # which without a cap crosses the web channel's 600s SSE idle timeout by the
 # 8th retry; capping each wait at 60s keeps the cumulative sleep in bounds.
@@ -1969,9 +1990,28 @@ class AgentStreamExecutor:
                     # Server-side prefix cache hits; providers that don't
                     # report it leave this at 0, which reads as "unknown".
                     "prompt_cache_hit_tokens": _cache_hit_tokens(stream_usage),
+                    # Input tokens served at full price (cache misses). Derived
+                    # from prompt_tokens - hit when the provider omits the field,
+                    # so it is always consistent with the hit count above.
+                    "prompt_cache_miss_tokens": _cache_miss_tokens(
+                        stream_usage, hit=_cache_hit_tokens(stream_usage)
+                    ),
                     # History estimate at capture time (freshness fingerprint).
                     "_est_history": est_history,
                 }
+                # Accumulate this call into the current run's total. One user
+                # question can trigger several LLM calls (each tool-call round
+                # re-sends the whole history); last_usage alone would report
+                # only the final call. input is summed across rounds because
+                # every round pays for the (growing) prompt it re-sends.
+                _tot = self.agent.run_usage_total or {
+                    "input": 0, "output": 0, "cache_hit": 0, "cache_miss": 0,
+                }
+                _tot["input"] += int(self.agent.last_usage.get("prompt_tokens") or 0)
+                _tot["output"] += int(self.agent.last_usage.get("completion_tokens") or 0)
+                _tot["cache_hit"] += int(self.agent.last_usage.get("prompt_cache_hit_tokens") or 0)
+                _tot["cache_miss"] += int(self.agent.last_usage.get("prompt_cache_miss_tokens") or 0)
+                self.agent.run_usage_total = _tot
             except (TypeError, ValueError):
                 pass
 

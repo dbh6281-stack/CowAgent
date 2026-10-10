@@ -83,7 +83,30 @@ function _ctxRenderCard(usage) {
         '<span class="ctx-usage-pct">' + percent + '%</span></div>' +
         '<div class="ctx-usage-legend">' + rows + '</div>' +
         '<div class="ctx-usage-foot">' + usedLine + '</div>' +
+        _ctxLastTurnBlock(usage.last_turn) +
         _ctxActionsBar()
+    );
+}
+
+// "This turn" block: the last request's real provider usage (input/output/
+// cache-hit). Distinct from the donut, which shows context *occupancy*. Block
+// is omitted entirely when the provider reported no usage for the turn.
+function _ctxLastTurnBlock(lastTurn) {
+    if (!lastTurn) return '';
+    const row = (labelKey, val) =>
+        '<div class="ctx-usage-row">' +
+        '<span class="ctx-usage-label">' + t(labelKey) + '</span>' +
+        '<span class="ctx-usage-val">' + _ctxFmtTokens(val || 0) + '</span>' +
+        '</div>';
+    let rows = row('ctx_last_in', lastTurn.input) + row('ctx_last_out', lastTurn.output);
+    if (lastTurn.cache_hit) rows += row('ctx_last_cache', lastTurn.cache_hit);
+    if (lastTurn.cache_miss) rows += row('ctx_last_cache_miss', lastTurn.cache_miss);
+    return (
+        '<div class="ctx-last-turn">' +
+        '<div class="ctx-usage-head"><span class="ctx-usage-title">' +
+        t('ctx_last_turn_title') + '</span></div>' +
+        rows +
+        '</div>'
     );
 }
 

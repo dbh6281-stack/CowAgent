@@ -464,6 +464,7 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
                 ${peer ? '' : `<button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
                     <i class="fas fa-rotate-right"></i>
                 </button>`}
+                <span class="turn-tokens text-xs text-slate-300 dark:text-slate-600" style="display:none;"></span>
             </div>
         </div>
     `;
@@ -473,9 +474,36 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
     if (existingAudio) {
         attachAudioToBotBubble(el, existingAudio, { autoplay: false });
     }
+    // Token usage persisted on the message (history replay). Without this the
+    // badge would only appear live and vanish on refresh / session switch /
+    // restart. Same shape the live SSE `done` handler renders in send.js.
+    const existingUsage = msg && msg.extras && msg.extras.usage;
+    if (existingUsage) renderTurnUsageBadge(el, existingUsage);
     renderBotSpeakerButton(el, displayContent);
     applyHighlighting(el);
     return el;
+}
+
+// Render this turn's token usage into a bot bubble's `.turn-tokens` span.
+// Shared by live `done` (send.js) and history replay (createBotMessageEl), so
+// a persisted badge looks identical to a live one. Never throws.
+function renderTurnUsageBadge(botEl, usage) {
+    try {
+        const u = usage || {};
+        const badge = botEl && botEl.querySelector('.turn-tokens');
+        if (!badge) return;
+        const fmt = (n) => (n == null ? '0' : (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)));
+        const parts = ['↑' + fmt(u.input), '↓' + fmt(u.output)];
+        if (u.cache_hit) parts.push('⚡' + fmt(u.cache_hit));
+        if (u.cache_miss) parts.push('⊘' + fmt(u.cache_miss));
+        badge.textContent = parts.join(' ');
+        badge.title = t('turn_tokens_tip') +
+            ' — ' + t('ctx_last_in') + ' ' + (u.input || 0) +
+            ' · ' + t('ctx_last_out') + ' ' + (u.output || 0) +
+            (u.cache_hit ? ' · ' + t('ctx_last_cache') + ' ' + u.cache_hit : '') +
+            (u.cache_miss ? ' · ' + t('ctx_last_cache_miss') + ' ' + u.cache_miss : '');
+        badge.style.display = '';
+    } catch (e) { /* badge is best-effort */ }
 }
 
 // Append (or replace) a small audio player inside a bot bubble's

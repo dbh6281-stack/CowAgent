@@ -136,6 +136,11 @@ class Agent:
         self.captured_actions = []  # Initialize captured actions list
         self.output_mode = output_mode
         self.last_usage = None  # Store last API response usage info
+        # Accumulated token usage for the CURRENT run only. A single user
+        # question may make several LLM calls (tool-call rounds); last_usage
+        # keeps only the final one, so this sums them all. Reset at the start
+        # of every run_stream() call.
+        self.run_usage_total = None
         self.messages = []  # Unified message history for stream mode
         self.messages_lock = threading.Lock()  # Lock for thread-safe message operations
         self.memory_manager = memory_manager  # Memory manager for auto memory flush
@@ -647,6 +652,28 @@ class Agent:
                 system_tokens, tools_tokens, history_tokens,
             )
 
+        # Surface the last turn's real provider usage as its own field, so the
+        # UI can show per-request input/output tokens rather than only the
+        # context occupancy. `used` above is the input side (prompt_tokens);
+        # this carries output/completion and the cache-hit split too. Omitted
+        # when the provider never reported usage (non-OpenAI-compatible paths).
+        last_turn = None
+        if isinstance(last_usage, dict):
+            try:
+                lt_in = int(last_usage.get("prompt_tokens") or 0)
+                lt_out = int(last_usage.get("completion_tokens") or 0)
+                lt_total = int(last_usage.get("total_tokens") or 0)
+                if lt_in or lt_out or lt_total:
+                    last_turn = {
+                        "input": lt_in,
+                        "output": lt_out,
+                        "total": lt_total or (lt_in + lt_out),
+                        "cache_hit": int(last_usage.get("prompt_cache_hit_tokens") or 0),
+                        "cache_miss": int(last_usage.get("prompt_cache_miss_tokens") or 0),
+                    }
+            except (TypeError, ValueError):
+                last_turn = None
+
         return {
             "available": True,
             "estimated": estimated,
@@ -655,6 +682,7 @@ class Agent:
             "limit": limit,
             "used": used,
             "messages": len(self.messages),
+            "last_turn": last_turn,
             "breakdown": {
                 "system": system_slice,
                 "tools": tools_slice,
@@ -804,6 +832,11 @@ class Agent:
         if clear_history:
             with self.messages_lock:
                 self.messages = []
+
+        # Reset the per-run usage accumulator: this run's total is computed
+        # from scratch by summing every LLM call it makes (tool-call rounds
+        # included), independent of last_usage which only tracks the final call.
+        self.run_usage_total = None
 
         # Get model to use
         if not self.model:

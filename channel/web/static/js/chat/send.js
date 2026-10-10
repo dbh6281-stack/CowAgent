@@ -347,6 +347,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems, resum
                     <button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}" style="display:none;">
                         <i class="fas fa-rotate-right"></i>
                     </button>
+                    <span class="turn-tokens text-xs text-slate-300 dark:text-slate-600" style="display:none;"></span>
                 </div>
             </div>
         `;
@@ -800,6 +801,26 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems, resum
                         }
                         if (prev && !prev.dataset.seq) {
                             prev.dataset.seq = item.user_seq;
+                        }
+                    }
+                }
+                // Show this turn's real token usage under the bubble. Populated
+                // from the provider usage the backend attaches to the done
+                // event; omitted when the provider reported none.
+                if (targetBotEl && item.usage) {
+                    if (typeof renderTurnUsageBadge === 'function') {
+                        renderTurnUsageBadge(targetBotEl, item.usage);
+                    } else {
+                        // Fallback if render.js hasn't loaded the shared helper.
+                        const u = item.usage;
+                        const fmt = (n) => (n == null ? '0' : (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)));
+                        const badge = targetBotEl.querySelector('.turn-tokens');
+                        if (badge) {
+                            const parts = ['↑' + fmt(u.input), '↓' + fmt(u.output)];
+                            if (u.cache_hit) parts.push('⚡' + fmt(u.cache_hit));
+                            if (u.cache_miss) parts.push('⊘' + fmt(u.cache_miss));
+                            badge.textContent = parts.join(' ');
+                            badge.style.display = '';
                         }
                     }
                 }
