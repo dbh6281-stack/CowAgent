@@ -848,6 +848,8 @@ function _launchSearchProviderConfig(providerId, providerMeta) {
     // reuse a model-vendor key and go through the vendor modal instead.
     if (['bocha', 'anysearch', 'serply', 'tavily', 'searxng', 'keenable'].includes(providerId)) {
         openSearchKeyModal(providerId, providerMeta);
+    } else if (providerId === 'deepseek') {
+        openDeepseekSearchModal();
     } else {
         openVendorModal(providerId, () => loadModelsView({ preserveScroll: true }));
     }
@@ -1056,6 +1058,103 @@ function _saveSearchKey(providerId) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_search_credential', provider: providerId, api_key: apiKey }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            const modal = document.getElementById('search-key-modal');
+            if (modal) modal.remove();
+            loadModelsView({ preserveScroll: true });
+        }
+    });
+}
+
+// DeepSeek search shares the model vendor's key and base, so it saves through
+// set_provider. No clear button: clearing would also disable the chat model.
+function openDeepseekSearchModal() {
+    const existing = document.getElementById('search-key-modal');
+    if (existing) existing.remove();
+
+    const searchCap = (modelsState && modelsState.capabilities && modelsState.capabilities.search) || {};
+    const prov = (searchCap.providers || []).find(p => p.id === 'deepseek') || {};
+    const masked = prov.api_key_masked || '';
+    const inputCls = `w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                      bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                      focus:outline-none focus:border-primary-500 font-mono`;
+    const labelCls = 'block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5';
+
+    const modal = document.createElement('div');
+    modal.id = 'search-key-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+                    w-full max-w-md mx-4 p-6 shadow-xl">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_deepseek_title')}</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_deepseek_desc')}</p>
+            <label class="${labelCls}">Base URL</label>
+            <input id="search-ds-base" type="text" autocomplete="off" class="${inputCls}"
+                   value="${escapeHtml(prov.api_base || '')}" placeholder="https://api.deepseek.com/v1" />
+            <label class="${labelCls} mt-4">API Key</label>
+            <input id="search-key-input" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
+                   class="${inputCls} ${masked ? 'cfg-key-masked' : ''}"
+                   value="${escapeHtml(masked)}" data-masked="${masked ? '1' : ''}" placeholder="sk-..." />
+            <div class="flex items-center justify-end gap-3 mt-5">
+                <button type="button" onclick="document.getElementById('search-key-modal').remove()"
+                        class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
+                               hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+                    ${t('cancel')}
+                </button>
+                <button type="button" onclick="_saveDeepseekSearch()"
+                        class="px-4 py-1.5 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                               cursor-pointer transition-colors">
+                    ${t('save')}
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = document.getElementById('search-key-input');
+    const unmask = () => {
+        if (input.dataset.masked === '1') {
+            input.value = '';
+            input.dataset.masked = '';
+            input.classList.remove('cfg-key-masked');
+        }
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab' || e.key === 'Escape') return;
+        unmask();
+    });
+    input.addEventListener('paste', unmask);
+    if (!masked) setTimeout(() => input.focus(), 50);
+
+    modal.addEventListener('mousedown', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+    const onKey = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+    };
+    document.addEventListener('keydown', onKey);
+}
+
+function _saveDeepseekSearch() {
+    const input = document.getElementById('search-key-input');
+    const baseInput = document.getElementById('search-ds-base');
+    if (!input || !baseInput) return;
+    const keptKey = input.dataset.masked === '1';
+    const apiKey = keptKey ? '' : input.value.trim();
+    if (!keptKey && !apiKey) {
+        input.focus();
+        return;
+    }
+    const payload = { action: 'set_provider', provider_id: 'deepseek', api_base: baseInput.value.trim() };
+    if (apiKey) payload.api_key = apiKey;
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
             const modal = document.getElementById('search-key-modal');
@@ -2074,6 +2173,7 @@ function fillVendorModalForProvider(providerId) {
 
     // Model catalog rows belong to the provider, so they load with it.
     fillCatalogForProvider('vendor-modal', providerId);
+    bindCatalogControls('vendor-modal', providerId);
 
     vendorModalState.providerId = providerId;
 }
@@ -2304,6 +2404,9 @@ function fillCatalogForProvider(prefix, providerId) {
         context_window: e.context_window || '',
         max_output_tokens: e.max_output_tokens || '',
     }));
+    // The pick list lives in this modal for every vendor; drop the previous
+    // vendor's candidates so switching providers cannot leave them open.
+    cancelDiscoverPick(prefix);
     renderCatalogRows(prefix);
 
     // Always start collapsed so credentials stay the focus — the catalog is an
@@ -2344,11 +2447,191 @@ function toggleCatalogSection(prefix) {
 
 /** Wire the section to one modal. Assigned (not addEventListener) so a
  *  repeated open cannot stack duplicate handlers. */
+const catalogDiscoverPicks = {};
+
+function _discoverPickHost(prefix) {
+    let el = document.getElementById(prefix + '-catalog-discover-pick');
+    if (el) return el;
+    const body = document.getElementById(prefix + '-catalog-body');
+    if (!body) return null;
+    el = document.createElement('div');
+    el.id = prefix + '-catalog-discover-pick';
+    body.appendChild(el);
+    return el;
+}
+
+function _catalogEntryFromDiscovered(model) {
+    const name = (model && (model.name || model.id)) || '';
+    const capabilities = Array.isArray(model.capabilities) && model.capabilities.length
+        ? model.capabilities.slice() : ['text'];
+    return {
+        name,
+        capabilities,
+        context_window: model.context_window || '',
+        max_output_tokens: model.max_output_tokens || '',
+    };
+}
+
+function renderDiscoverPick(prefix) {
+    const host = _discoverPickHost(prefix);
+    if (!host) return;
+    const pick = catalogDiscoverPicks[prefix];
+    if (!pick || !pick.candidates.length) {
+        host.innerHTML = '';
+        return;
+    }
+    const selected = pick.selected;
+    host.innerHTML = `
+        <div class="mt-3 rounded-lg border border-slate-200 dark:border-white/10 p-2.5">
+            <div class="text-xs font-medium text-slate-600 dark:text-slate-300 mb-2">
+                ${escapeHtml(t('models_catalog_discover_pick'))}
+                <span class="font-normal text-slate-400"> · ${selected.size}/${pick.candidates.length}</span>
+            </div>
+            <div class="max-h-48 overflow-y-auto space-y-1 pr-0.5">
+                ${pick.candidates.map((model, idx) => {
+                    const checked = selected.has(model.name) ? 'checked' : '';
+                    const tags = (model.capabilities || []).map(cap =>
+                        `<span class="text-[10px] text-slate-400">${escapeHtml(t(MODEL_CATALOG_TAG_KEYS[cap] || 'models_tag_chat'))}</span>`
+                    ).join(' · ');
+                    return `<label class="flex items-start gap-2 py-1 cursor-pointer">
+                        <input type="checkbox" ${checked} onchange="toggleDiscoverPick('${prefix}', ${idx}, this.checked)"
+                               class="mt-0.5 cursor-pointer">
+                        <span class="min-w-0">
+                            <span class="block text-xs font-mono text-slate-700 dark:text-slate-200 break-all">${escapeHtml(model.name)}</span>
+                            <span class="block text-[10px] text-slate-400">${tags}</span>
+                        </span>
+                    </label>`;
+                }).join('')}
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+                <button type="button" onclick="applyDiscoverPick('${prefix}')"
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium
+                               bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400
+                               hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer">
+                    ${escapeHtml(t('models_catalog_discover_apply'))}
+                </button>
+                <button type="button" onclick="cancelDiscoverPick('${prefix}')"
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs
+                               text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer">
+                    ${escapeHtml(t('models_catalog_discover_cancel'))}
+                </button>
+            </div>
+        </div>`;
+}
+
+function toggleDiscoverPick(prefix, idx, on) {
+    const pick = catalogDiscoverPicks[prefix];
+    if (!pick || !pick.candidates[idx]) return;
+    const name = pick.candidates[idx].name;
+    if (on) pick.selected.add(name);
+    else pick.selected.delete(name);
+    renderDiscoverPick(prefix);
+}
+
+function applyDiscoverPick(prefix) {
+    const pick = catalogDiscoverPicks[prefix];
+    const status = document.getElementById(prefix + '-status');
+    if (!pick) return;
+    const draft = _catalogRows(prefix);
+    const have = new Set(draft.map(e => (e.name || '').trim()).filter(Boolean));
+    let added = 0;
+    pick.candidates.forEach(model => {
+        if (!pick.selected.has(model.name) || have.has(model.name)) return;
+        have.add(model.name);
+        draft.push(model);
+        added += 1;
+    });
+    delete catalogDiscoverPicks[prefix];
+    renderDiscoverPick(prefix);
+    renderCatalogRows(prefix);
+    if (status) {
+        status.textContent = t('models_catalog_discovered').replace('{n}', added);
+        status.classList.remove('opacity-0', 'text-red-500');
+        status.classList.add('text-primary-500');
+    }
+}
+
+function cancelDiscoverPick(prefix) {
+    delete catalogDiscoverPicks[prefix];
+    renderDiscoverPick(prefix);
+}
+
+function discoverCatalogModels(prefix, providerId) {
+    const btn = document.getElementById(prefix + '-catalog-discover');
+    const status = document.getElementById(prefix + '-status');
+    const baseInput = document.getElementById(prefix + '-base');
+    const keyInput = document.getElementById(prefix + '-key');
+    const apiBase = baseInput ? baseInput.value.trim() : '';
+    let apiKey = keyInput ? keyInput.value.trim() : '';
+    if (keyInput && keyInput.dataset.masked === '1'
+        && apiKey === (keyInput.dataset.maskedVal || '')) {
+        apiKey = '';
+    }
+    if (!apiBase && !providerId) {
+        if (status) { status.textContent = t('models_custom_base_required'); status.classList.remove('opacity-0'); }
+        return;
+    }
+    const payload = { action: 'discover_models', provider_id: providerId || '', api_base: apiBase };
+    if (apiKey) payload.api_key = apiKey;
+    if (btn) btn.disabled = true;
+    if (status) {
+        status.textContent = t('models_catalog_discovering');
+        status.classList.remove('opacity-0', 'text-red-500');
+        status.classList.add('text-primary-500');
+    }
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (btn) btn.disabled = false;
+        if (data.status !== 'success') {
+            if (status) {
+                status.textContent = data.message || t('models_save_failed');
+                status.classList.remove('opacity-0', 'text-primary-500');
+                status.classList.add('text-red-500');
+            }
+            return;
+        }
+        const have = new Set(_catalogRows(prefix).map(e => (e.name || '').trim()).filter(Boolean));
+        const candidates = (data.models || []).map(_catalogEntryFromDiscovered)
+            .filter(model => model.name && !have.has(model.name));
+        if (!candidates.length) {
+            delete catalogDiscoverPicks[prefix];
+            renderDiscoverPick(prefix);
+            if (status) {
+                status.textContent = t('models_catalog_discover_none');
+                status.classList.remove('opacity-0', 'text-red-500');
+                status.classList.add('text-primary-500');
+            }
+            return;
+        }
+        catalogDiscoverPicks[prefix] = {
+            candidates,
+            selected: new Set(candidates.filter(m => (m.capabilities || []).includes('text')).map(m => m.name)),
+        };
+        renderDiscoverPick(prefix);
+        if (status) {
+            status.textContent = '';
+            status.classList.add('opacity-0');
+        }
+    }).catch(() => {
+        if (btn) btn.disabled = false;
+        if (status) {
+            status.textContent = t('models_save_failed');
+            status.classList.remove('opacity-0', 'text-primary-500');
+            status.classList.add('text-red-500');
+        }
+    });
+}
+
 function bindCatalogControls(prefix, providerIdForSeed) {
     const toggle = document.getElementById(prefix + '-catalog-toggle');
     const add = document.getElementById(prefix + '-catalog-add');
     if (toggle) toggle.onclick = () => toggleCatalogSection(prefix);
     if (add) add.onclick = () => addCatalogRow(prefix);
+    const discover = document.getElementById(prefix + '-catalog-discover');
+    if (discover) discover.onclick = () => discoverCatalogModels(prefix, providerIdForSeed);
     const seed = document.getElementById(prefix + '-catalog-seed');
     if (seed) seed.onclick = () => seedCatalogFromPresets(prefix, providerIdForSeed);
 }

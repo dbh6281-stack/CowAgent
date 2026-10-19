@@ -34,6 +34,7 @@ import threading
 import time
 from typing import Dict, Optional
 
+from common.atomic_write import write_json_atomic
 from common.log import logger
 
 # ``members`` is the roster of a team conversation: the Agent ids the session's
@@ -62,6 +63,8 @@ def _load() -> Dict:
     except Exception as e:
         logger.warning(f"[SessionPrefs] Could not read {path}: {e}")
         return {"sessions": {}}
+    if not isinstance(data, dict):
+        return {"sessions": {}}
     if not isinstance(data.get("sessions"), dict):
         data["sessions"] = {}
     return data
@@ -71,12 +74,10 @@ def _save(data: Dict) -> None:
     path = _store_file()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = f"{path}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        write_json_atomic(path, data, indent=2)
     except Exception as e:
         logger.warning(f"[SessionPrefs] Could not write {path}: {e}")
+        raise
 
 
 def _session_key(session_id: str, agent_id: Optional[str]) -> str:

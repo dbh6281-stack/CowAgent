@@ -3,7 +3,10 @@ import type {
   ChannelInfo,
   ChannelAction,
   SkillInfo,
+  SkillInstallMeta,
   SkillContent,
+  SkillFileEntry,
+  SkillCreateResult,
   ToolInfo,
   McpServerConfig,
   McpServersResult,
@@ -33,6 +36,7 @@ import type {
   KnowledgeGraph,
   KnowledgeAction,
   KnowledgeImportPayload,
+  KnowledgeReadResult,
   WorkspaceEntry,
   WorkspaceReadResult,
   WorkspaceTree,
@@ -48,6 +52,11 @@ import { getLang, t } from '../i18n'
 export interface ApiResult {
   status: string
   message?: string
+}
+
+export interface ExternalApiState {
+  enabled: boolean
+  api_key: string
 }
 
 export interface UploadResult {
@@ -228,6 +237,21 @@ class ApiClient {
     // for bug reports, but hand the user a plain, non-alarming message.
     console.error(`[api] upload network failure to ${url}:`, lastErr)
     throw new Error(t('upload_network_error'))
+  }
+
+  /** A file's bytes in memory, for a multipart body to carry.
+   *
+   * In Electron, `fetch` streaming a File straight from disk intermittently
+   * rejects with a bare "Failed to fetch" (see `uploadFile`), and a retry of the
+   * same File hits the same backing path. Reading the bytes first sidesteps it;
+   * on failure the File itself is returned so behavior only degrades.
+   */
+  private async fileBytes(file: File): Promise<Blob | File> {
+    try {
+      return new Blob([await file.arrayBuffer()], { type: file.type })
+    } catch {
+      return file
+    }
   }
 
   // ---------------------------------------------------------
@@ -675,6 +699,17 @@ class ApiClient {
     })
   }
 
+  /** The OpenAI-compatible chat API: whether it is on, its key, and the Agents it serves. */
+  async getExternalApi(): Promise<ApiResult & ExternalApiState> {
+    return this.request('/api/external_api')
+  }
+
+  async updateExternalApi(
+    action: 'enable' | 'disable' | 'regenerate'
+  ): Promise<ApiResult & ExternalApiState> {
+    return this.request('/api/external_api', { method: 'POST', body: JSON.stringify({ action }) })
+  }
+
   // ---------------------------------------------------------
   // Menu (shared with the web console) and the artifacts it can hold
   // ---------------------------------------------------------
@@ -959,10 +994,11 @@ class ApiClient {
   }
 
   /** Install straight from a remote spec (e.g. an https archive URL), without staging. */
-  async installSkill(spec: string): Promise<ApiResult & { installed?: string[] }> {
+  /** `meta` is recorded on the skill when the spec installs exactly one. */
+  async installSkill(spec: string, meta?: SkillInstallMeta): Promise<ApiResult & { installed?: string[] }> {
     return this.request('/api/skills', {
       method: 'POST',
-      body: JSON.stringify({ action: 'install', spec }),
+      body: JSON.stringify({ action: 'install', spec, ...(meta ? { meta } : {}) }),
     })
   }
 
@@ -998,17 +1034,57 @@ class ApiClient {
   }
 
   /**
-   * Read a skill's definition file.
+   * Create a skill from the fields a form collects (multipart: the body carries
+   * files as well as text). `name` is a title, which the server reduces to the
+   * hyphen-case name the directory uses; `files` are bundled beside SKILL.md.
    *
-   * Addressed by name rather than by path: which file a name resolves to is the
-   * loader's business, and a builtin skill's file sits outside the workspace.
+   * An attachment picked as part of a folder keeps the path it sat at, sent in a
+   * field of its own the way an uploaded folder's paths are: a skill's resources
+   * come as a `scripts/` directory as often as they come as loose files.
    */
-  async readSkill(name: string): Promise<SkillContent & ApiResult> {
-    return this.request(`/api/skills/content?name=${encodeURIComponent(name)}`)
+  async createSkill(args: {
+    name: string
+    description: string
+    body?: string
+    files?: File[]
+  }): Promise<SkillCreateResult & ApiResult> {
+    const formData = new FormData()
+    formData.append('name', args.name)
+    formData.append('description', args.description)
+    formData.append('body', args.body || '')
+    for (const file of args.files || []) {
+      formData.append('files', await this.fileBytes(file), file.name)
+      formData.append('relative_paths', file.webkitRelativePath || file.name)
+    }
+    return this.postFormData('/api/skills/create', formData)
   }
 
   /**
-   * Save a skill's definition file.
+   * The files one skill is made of: its SKILL.md, and the `scripts/`,
+   * `references/` and assets installed beside it.
+   */
+  async listSkillFiles(name: string): Promise<SkillFileEntry[]> {
+    const data = await this.request<{ status: string; files: SkillFileEntry[] }>(
+      `/api/skills/files?name=${encodeURIComponent(name)}`
+    )
+    return data.files || []
+  }
+
+  /**
+   * Read one of a skill's files, its SKILL.md by default.
+   *
+   * The skill is addressed by name rather than by path: which directory a name
+   * resolves to is the loader's business, and a builtin skill sits outside the
+   * workspace. `path` then names a file inside that directory.
+   */
+  async readSkill(name: string, path?: string): Promise<SkillContent & ApiResult> {
+    const query = `name=${encodeURIComponent(name)}`
+      + (path ? `&path=${encodeURIComponent(path)}` : '')
+    return this.request(`/api/skills/content?${query}`)
+  }
+
+  /**
+   * Save one of a skill's files.
    *
    * Refuses a skill that ships with the installation, and answers
    * `code === 'conflict'` when the file changed since `expectedMtime` - both
@@ -1016,6 +1092,7 @@ class ApiClient {
    */
   async writeSkill(args: {
     name: string
+    path?: string
     content: string
     expectedMtime?: number | null
   }): Promise<WorkspaceWriteResult & ApiResult> {
@@ -1023,6 +1100,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({
         name: args.name,
+        path: args.path || '',
         content: args.content,
         expected_mtime: args.expectedMtime ?? null,
       }),
@@ -1072,10 +1150,13 @@ class ApiClient {
     return this.request<{ status: string } & KnowledgeList>(this.scoped('/api/knowledge/list', agentId))
   }
 
+  // `mtime` and `editable` are what an editor needs to offer a safe save: the
+  // baseline a stale write is rejected against, and whether the page may be
+  // written back at all (index.md and log.md are the Agent's to maintain).
   async readKnowledge(
     path: string,
     agentId?: string
-  ): Promise<{ status: string; content: string; path: string; dir?: string }> {
+  ): Promise<KnowledgeReadResult> {
     return this.request(this.scoped(`/api/knowledge/read?path=${encodeURIComponent(path)}`, agentId))
   }
 

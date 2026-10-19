@@ -31,6 +31,12 @@ from common.singleton import singleton
 from config import conf
 
 
+# `message` event subtypes that carry something a user typed or shared; every other subtype
+# (bot_message, message_changed/deleted, channel_join/leave/topic/purpose/name, pinned_item, ...)
+# is Slack bookkeeping and must not be answered as a prompt.
+_USER_MESSAGE_SUBTYPES = (None, "file_share", "thread_broadcast", "me_message")
+
+
 @singleton
 class SlackChannel(ChatChannel):
     NOT_SUPPORT_REPLYTYPE = []
@@ -166,8 +172,9 @@ class SlackChannel(ChatChannel):
                 f"subtype={event.get('subtype')}, user={event.get('user')}, "
                 f"ts={event.get('ts')}, thread_ts={event.get('thread_ts')}"
             )
-            # Ignore bot messages (including our own) and message edits/deletes
-            if event.get("bot_id") or event.get("subtype") in ("bot_message", "message_changed", "message_deleted"):
+            # Ignore bot messages (including our own), edits/deletes and workspace notices
+            # (channel_join, channel_topic, pinned_item, ...): only ordinary user messages count
+            if event.get("bot_id") or event.get("subtype") not in _USER_MESSAGE_SUBTYPES:
                 return
             if event.get("user") == self.bot_user_id:
                 return
@@ -444,13 +451,18 @@ class SlackChannel(ChatChannel):
             logger.warning("[Slack] no slack_channel in context, drop reply")
             return
 
+        progress = {"sent": False}
         try:
-            self._do_send(reply, channel_id, thread_ts)
+            self._do_send(reply, channel_id, thread_ts, progress)
             logger.info(f"[Slack] sent reply (type={reply.type}, channel={channel_id})")
         except Exception as e:
             logger.error(f"[Slack] send failed: {e}", exc_info=True)
+            # chat_channel._send retries the whole reply: only worth it when nothing went out.
+            if not progress["sent"]:
+                raise
 
-    def _do_send(self, reply: Reply, channel_id: str, thread_ts):
+    def _do_send(self, reply: Reply, channel_id: str, thread_ts, progress: dict = None):
+        progress = {} if progress is None else progress
         rtype = reply.type
         content = reply.content
 
@@ -461,6 +473,7 @@ class SlackChannel(ChatChannel):
             # Slack caps a message around 40k chars; split conservatively
             for chunk in _split_text(text, 3500):
                 self._client.chat_postMessage(channel=channel_id, text=chunk, thread_ts=thread_ts)
+                progress["sent"] = True
 
         elif rtype == ReplyType.IMAGE:
             # Already a local BytesIO; upload it directly

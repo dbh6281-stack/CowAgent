@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 
 def iter_docx_body_text(document):
-    """Yield paragraphs and table rows in the order they occur in the body.
+    """Yield paragraphs and table rows in body order, including content controls.
 
     Builds python-docx's block objects directly, which also works on versions
     that predate ``Document.iter_inner_content()``.
@@ -25,11 +25,24 @@ def _iter_docx_blocks(container, parent):
     for element in container.iterchildren():
         if element.tag == qn("w:p"):
             yield Paragraph(element, parent).text
+        elif element.tag == qn("w:sdt"):
+            content = element.find(qn("w:sdtContent"))
+            if content is not None:
+                yield from _iter_docx_blocks(content, parent)
         elif element.tag == qn("w:tbl"):
+            seen_cells = set()
             for row in Table(element, parent).rows:
-                yield "\t".join(
-                    "\n".join(_iter_docx_blocks(cell._tc, cell)) for cell in row.cells
-                )
+                values = []
+                for cell in row.cells:
+                    # python-docx repeats the same XML cell for every covered
+                    # grid slot, including vertical continuations. Keep those
+                    # slots empty without dropping equal text in other cells.
+                    if cell._tc in seen_cells:
+                        values.append("")
+                    else:
+                        seen_cells.add(cell._tc)
+                        values.append("\n".join(_iter_docx_blocks(cell._tc, cell)))
+                yield "\t".join(values)
 
 
 def iter_pptx_shape_text(shapes):
@@ -73,6 +86,12 @@ def spreadsheet_sheets(file_path, load_workbook):
     try:
         formulas = load_workbook(file_path, read_only=True, data_only=False)
         try:
+            # Some spreadsheet producers leave stale used-range metadata. In
+            # read-only mode those bounds silently clip real XML cells, so let
+            # both views stream their actual rows/columns before pairing them.
+            for sheet in cached.worksheets:
+                sheet.reset_dimensions()
+                formulas[sheet.title].reset_dimensions()
             yield ((sheet.title, _sheet_rows(sheet, formulas[sheet.title])) for sheet in cached.worksheets)
         finally:
             formulas.close()

@@ -165,6 +165,16 @@ export interface MessageStep {
 }
 
 /** Local UI message model (superset of backend history message). */
+/** Provider-reported token usage summed over one reply's model calls. */
+export interface MessageUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+  calls?: number
+}
+
 export interface ChatMessage {
   id: string
   role: Role
@@ -183,6 +193,7 @@ export interface ChatMessage {
   /** Sequence numbers from backend (for delete/regenerate). */
   userSeq?: number
   botSeq?: number
+  usage?: MessageUsage
   /** Self-evolution bubble flag; 'divider' renders a context-cleared separator. */
   kind?: 'evolution' | 'divider'
   extras?: Record<string, unknown>
@@ -462,6 +473,8 @@ export interface StreamEvent {
   timestamp?: number
   user_seq?: number
   bot_seq?: number
+  /** `done`: usage of the reply just persisted. */
+  usage?: MessageUsage
   message?: string
 }
 
@@ -559,6 +572,7 @@ export interface HistoryMessage {
   artifacts?: Artifact[]
   /** Per-message sequence number used by delete/regenerate APIs. */
   _seq?: number
+  usage?: MessageUsage
   /** Set on an assistant turn whose run stopped short of its answer. */
   run_state?: RunState
 }
@@ -666,6 +680,8 @@ export interface ConfigData {
   // Real password, only returned to the desktop app (trusted local machine) so
   // it can be edited in place. Undefined for browser access.
   web_password?: string
+  // Registry used for installs by name; empty means the default Skill Hub.
+  skill_hub_url?: string
 }
 
 // ============================================================
@@ -740,6 +756,8 @@ export interface SearchProviderMeta {
   // URL (not a secret, so returned verbatim) for prefill/edit.
   needs_url?: boolean
   url_masked?: string
+  // DeepSeek only: the model vendor's base URL, edited together with its key.
+  api_base?: string
 }
 
 export interface CapabilityState {
@@ -830,6 +848,7 @@ export type ModelsAction =
   // (edited/added entries) and `hidden` the removed preset names; the backend
   // drops the provider's overlay entirely when both are empty (back to presets).
   | { action: 'save_catalog'; provider_id: string; models: ModelCatalogEntry[]; hidden: string[] }
+  | { action: 'discover_models'; provider_id?: string; api_key?: string; api_base?: string }
   // `chat_fallback` is not a first-class CapabilityKey (it has no top-level
   // card), but it is persisted through the same set_capability action, so it
   // is accepted here alongside its opt-in fields.
@@ -947,11 +966,26 @@ export interface SkillInfo {
   name: string
   display_name?: string
   description: string
+  /** Shown in place of `description`, which stays what the agent reads */
+  display_description?: string
   source?: string
   enabled: boolean
   category?: string
+  icon?: string
+  version?: string
+  /** Epoch seconds the skill first showed up in the library */
+  installed_at?: number
   ships_with_install?: boolean
   deletable?: boolean
+}
+
+/** What an installer records about a skill it installs; every field is optional. */
+export interface SkillInstallMeta {
+  category?: string
+  display_name?: string
+  display_description?: string
+  icon?: string
+  version?: string
 }
 
 export type McpTransport = 'stdio' | 'sse' | 'streamable-http'
@@ -1030,6 +1064,34 @@ export interface SkillContent extends WorkspaceReadResult {
   ships_with_install: boolean
 }
 
+/**
+ * One entry of GET /api/skills/files: a file or directory inside a skill.
+ *
+ * Listed depth first in the order a tree draws them, so `depth` is all a
+ * renderer needs to show the nesting.
+ */
+export interface SkillFileEntry {
+  /** Relative to the skill's own directory, as the content endpoint takes it. */
+  path: string
+  name: string
+  depth: number
+  is_dir: boolean
+  /** Coarse preview kind: `markdown`, `code`, `image`, `directory`, ... */
+  kind: string
+  /** Whether showing it as text is meaningful; false for a bundled asset. */
+  text: boolean
+  size: number
+  mtime: number
+}
+
+/** Response of POST /api/skills/create: the skill written from the form. */
+export interface SkillCreateResult {
+  /** The name it was created under, reduced from the title that was typed. */
+  name: string
+  /** The bundled files, by the path each kept inside the skill directory. */
+  files: string[]
+}
+
 // ============================================================
 // Memory
 // ============================================================
@@ -1086,6 +1148,20 @@ export interface KnowledgeList {
   enabled: boolean
 }
 
+// What `/api/knowledge/read` answers. `mtime` and `editable` mirror the
+// workspace read endpoint, which is what lets a knowledge page drive the same
+// document editor the memory and skill pages use.
+export interface KnowledgeReadResult {
+  status: string
+  message?: string
+  content: string
+  path: string
+  mtime: number
+  editable: boolean
+  /** Absolute directory of the page, for resolving its relative image srcs. */
+  dir?: string
+}
+
 export interface KnowledgeGraph {
   nodes: Array<{ id: string; label: string; category?: string }>
   links: Array<{ source: string; target: string }>
@@ -1096,6 +1172,12 @@ export interface KnowledgeGraph {
 export type KnowledgeAction = { agent_id?: string } & (
   | { action: 'create_category'; payload: { path: string } }
   | { action: 'create_document'; payload: { path: string; content: string; overwrite?: boolean } }
+  // `expected_mtime` is the timestamp the editor started from; the backend
+  // refuses the save when the Agent has rewritten the page since.
+  | {
+      action: 'update_document'
+      payload: { path: string; content: string; expected_mtime?: number | null }
+    }
   | { action: 'rename_category'; payload: { path: string; new_path: string } }
   | { action: 'delete_category'; payload: { path: string; confirm?: boolean } }
   | { action: 'delete_documents'; payload: { paths: string[] } }

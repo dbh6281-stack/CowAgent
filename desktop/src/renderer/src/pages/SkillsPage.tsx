@@ -9,12 +9,16 @@ import {
   Plug,
   Trash2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Compass,
   ExternalLink,
   Terminal,
+  FileQuestion,
   FileText,
   FilePen,
   SquarePen,
+  Folder,
   FolderOpen,
   Send,
   Search,
@@ -23,20 +27,25 @@ import {
   Clock,
   Brain,
   Wrench,
+  Wand2,
+  BookOpen,
+  Image as ImageIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { ApiResult } from '../api/client'
-import type { ToolInfo, SkillInfo, SkillContent, McpServerConfig } from '../types'
+import type { ToolInfo, SkillInfo, SkillContent, SkillFileEntry, McpServerConfig } from '../types'
 import { Toggle } from './settings/primitives'
 import Markdown from '../components/Markdown'
-import { DocActions, DocEditor, DocNotice } from '../components/DocEditor'
+import { DocActions, DocEditor, DocNotice, DocView } from '../components/DocEditor'
 import { createDocEditorStore, docRefusal } from '../store/docEditorStore'
 import { askConfirm } from '../store/confirmStore'
 import McpEditorModal from './skills/McpEditorModal'
 import SkillAddModal from './skills/SkillAddModal'
+import { formatSkillFileSize } from './skills/SkillCreateForm'
 import { parseSkillFrontmatter } from './skills/frontmatter'
+import { skillLabel } from './skills/skillLabel'
 import { MCP_TRANSPORT_LABELS, mcpTransport } from './skills/mcpConfig'
 import { product } from '@product'
 
@@ -64,43 +73,227 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   memory_search: Brain,
 }
 
+/** Where the file list's own show/hide state is kept, as in the web console. */
+const SKILL_FILES_PANEL_KEY = 'cow_skill_files_panel'
+
 /**
- * Skills are addressed by name, not by path: which file a name resolves to is
- * the loader's business, and a builtin skill's file sits outside the workspace.
+ * A skill is addressed by name, not by path: which directory a name resolves to
+ * is the loader's business, and a builtin skill sits outside the workspace.
+ * `path` then names one file inside it - a skill is a directory, and the files
+ * beside its SKILL.md are as much part of it.
  */
 interface SkillRef {
   name: string
   label: string
+  /** File within the skill directory; its SKILL.md when empty. */
+  path?: string
 }
 
 /** Created at module scope so an unsaved edit survives a route change. */
 const skillEditor = createDocEditorStore<SkillRef, SkillContent & ApiResult>({
-  keyOf: (doc) => doc.name,
-  read: (doc) => apiClient.readSkill(doc.name),
+  // The file, not just the skill: switching between two files of one skill has
+  // to read as a different document, or a late response would be dropped as a
+  // duplicate of the one on screen.
+  keyOf: (doc) => `${doc.name}/${doc.path || ''}`,
+  read: (doc) => apiClient.readSkill(doc.name, doc.path),
   write: (doc, content, expectedMtime) =>
-    apiClient.writeSkill({ name: doc.name, content, expectedMtime }),
+    apiClient.writeSkill({ name: doc.name, path: doc.path, content, expectedMtime }),
   refusal: (data) => (data.ships_with_install ? t('skill_builtin_readonly') : docRefusal(data)),
 })
 
-/** A skill's read-only view: frontmatter as a titled header, body as markdown. */
-const SkillContentView: React.FC<{ content: string }> = ({ content }) => {
+/**
+ * A non-markdown file as a fenced code block, so it renders with the same
+ * highlighting and copy button as code anywhere else in the app.
+ *
+ * The fence is longer than any run of backticks in the file, or a code sample
+ * inside it would end the block early.
+ */
+function skillCodeBlock(path: string, content: string): string {
+  // Only a real extension names a language: left unguarded a `LICENSE` would be
+  // labelled one, and the highlighter asked to find it.
+  const filename = path.split('/').pop() || ''
+  const lang = filename.includes('.') ? (filename.split('.').pop() || '').toLowerCase() : ''
+  // Folded rather than spread into Math.max: a file can hold more runs of
+  // backticks than an argument list takes.
+  const longest = (content.match(/`+/g) || []).reduce((n, run) => Math.max(n, run.length), 2)
+  const fence = '`'.repeat(longest + 1)
+  return `${fence}${lang}\n${content}\n${fence}`
+}
+
+/**
+ * The read-only view of one of a skill's files.
+ *
+ * A markdown file - its SKILL.md above all - reads as prose, with the
+ * frontmatter lifted out into a header: handed to the markdown renderer as-is
+ * the `---` block becomes a giant bold heading and a horizontal rule. Anything
+ * else is a script or a data file, and reads as code.
+ */
+const SkillContentView: React.FC<{
+  content: string
+  /** Which file is open; empty for the skill's own SKILL.md. */
+  path?: string
+  /** How it was listed, when the tree knows it. */
+  file?: SkillFileEntry
+}> = ({ content, path, file }) => {
+  // A bundled asset belongs in the tree - it is part of the skill - but showing
+  // it here would only print mojibake.
+  if (file && !file.text) {
+    return (
+      <div className="py-12 flex flex-col items-center gap-2 text-content-tertiary">
+        <FileQuestion size={22} />
+        <span className="text-sm">{t('skill_file_not_text')}</span>
+      </div>
+    )
+  }
+
+  const isMarkdown = file ? file.kind === 'markdown' : !path || /\.(md|markdown)$/i.test(path)
+  if (!isMarkdown) return <Markdown content={skillCodeBlock(path || '', content)} />
+
   const { fields, body } = parseSkillFrontmatter(content)
   return (
     <>
       {fields.length > 0 && (
-        <div className="mb-5 pb-5 border-b border-subtle space-y-2">
-          {fields.map(([key, value]) => (
-            <div key={key} className="flex gap-3 text-sm">
-              <span className="flex-shrink-0 w-24 font-medium text-content-tertiary">{key}</span>
-              <span className="flex-1 min-w-0 text-content break-words">{value}</span>
-            </div>
+        // The label column sizes to the longest key, up to a cap; past it a
+        // dotted path like `metadata.cowagent.requires.anyEnv` wraps at its
+        // dots rather than squeezing the values into a sliver.
+        <dl className="mb-6 grid grid-cols-[minmax(5rem,9rem)_1fr] gap-x-4 gap-y-1.5 rounded-card border border-default bg-inset px-4 py-3 text-sm">
+          {/* Index keys: a hand-written header may repeat a key. */}
+          {fields.map(([key, value], row) => (
+            <React.Fragment key={row}>
+              <dt className="font-mono text-xs leading-6 text-content-tertiary break-words" title={key}>
+                {key.split('.').map((part, i, parts) => (
+                  <React.Fragment key={i}>
+                    {part}
+                    {i < parts.length - 1 && (
+                      <>
+                        .<wbr />
+                      </>
+                    )}
+                  </React.Fragment>
+                ))}
+              </dt>
+              <dd className="min-w-0 leading-6 text-content break-words">{value}</dd>
+            </React.Fragment>
           ))}
-        </div>
+        </dl>
       )}
       <Markdown content={body} />
     </>
   )
 }
+
+/**
+ * The open skill's files, indented by the depth the server listed them at.
+ *
+ * Shown even for a skill that is only its SKILL.md: the panel is what says what
+ * a skill is made of, and "one file, this big" is an answer to that. It only
+ * goes away when the listing could not be fetched at all, where an empty tree
+ * beside the file on screen would just look broken.
+ */
+const SkillFileTree: React.FC<{
+  files: SkillFileEntry[]
+  current: string
+  /** Directories the reader has folded away, by path. Empty means all open. */
+  folded: Set<string>
+  onSelect: (path: string) => void
+  onToggleDir: (path: string) => void
+}> = ({ files, current, folded, onSelect, onToggleDir }) => {
+  if (!files.length) return null
+
+  const hiddenByFold = (path: string): boolean => {
+    for (const dir of folded) if (path.startsWith(`${dir}/`)) return true
+    return false
+  }
+
+  return (
+    <div className="w-60 flex-shrink-0 flex flex-col min-h-0 border-r border-default">
+      <div className="flex-shrink-0 px-4 pt-3 pb-1.5 truncate text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+        {t('skill_files_title')}
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
+        {files
+          .filter((file) => !hiddenByFold(file.path))
+          .map((file) => {
+            const isFolded = folded.has(file.path)
+            const active = !file.is_dir && file.path === current
+            return (
+              <button
+                key={file.path}
+                type="button"
+                title={file.path}
+                onClick={() => (file.is_dir ? onToggleDir(file.path) : onSelect(file.path))}
+                style={{ paddingLeft: 8 + file.depth * 14 }}
+                className={`w-full flex items-center gap-1.5 py-1.5 pr-2 rounded-btn text-[13px] text-left transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-accent-soft text-accent'
+                    : file.is_dir
+                      ? 'text-content-secondary font-medium hover:bg-surface-2'
+                      : 'text-content-secondary hover:bg-surface-2'
+                }`}
+              >
+                {/* A caret only where there is something to fold; the others keep
+                    its width so every name in one directory starts at one column. */}
+                {file.is_dir ? (
+                  isFolded ? (
+                    <ChevronRight size={13} className="flex-shrink-0 opacity-70" />
+                  ) : (
+                    <ChevronDown size={13} className="flex-shrink-0 opacity-70" />
+                  )
+                ) : (
+                  <span className="w-[13px] flex-shrink-0" />
+                )}
+                {file.is_dir ? (
+                  isFolded ? (
+                    <Folder size={13} className="flex-shrink-0 opacity-70" />
+                  ) : (
+                    <FolderOpen size={13} className="flex-shrink-0 opacity-70" />
+                  )
+                ) : (
+                  <FileText size={13} className="flex-shrink-0 opacity-70" />
+                )}
+                <span className="flex-1 min-w-0 truncate">{file.name}</span>
+                {/* Only for files: a directory's own size says nothing about what
+                    the tree shows inside it. */}
+                {!file.is_dir && (
+                  <span
+                    className={`flex-shrink-0 text-[10px] tabular-nums ${
+                      active ? 'text-accent opacity-70' : 'text-content-tertiary'
+                    }`}
+                  >
+                    {formatSkillFileSize(file.size)}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The switch that folds the file list away and brings it back, riding the
+ * border the list sits against: centred on the divider while the list is out
+ * (15rem is the panel's w-60), on the card's own left edge once it is folded,
+ * level with the list's title. The half pixel centres it on a 1px line rather
+ * than beside it. Mirrors `.skill-files-switch` in the web console.
+ */
+const SkillFilesSwitch: React.FC<{ expanded: boolean; onClick: () => void }> = ({
+  expanded,
+  onClick,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-expanded={expanded}
+    aria-label={t(expanded ? 'skill_files_collapse' : 'skill_files_expand')}
+    title={t(expanded ? 'skill_files_collapse' : 'skill_files_expand')}
+    style={{ left: expanded ? 'calc(15rem + 0.5px)' : '0.5px' }}
+    className="absolute top-[10px] z-10 -translate-x-1/2 w-[22px] h-[22px] inline-flex items-center justify-center rounded-full border border-default bg-surface shadow-sm text-content-tertiary hover:text-accent hover:border-accent transition-colors cursor-pointer"
+  >
+    {expanded ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+  </button>
+)
 
 function mcpStatusLabel(status?: string): string {
   const key: Record<string, string> = {
@@ -122,6 +315,65 @@ function mcpStatusClass(status?: string): string {
   return 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
 }
 
+// Built-in skills, in the order they lead the list, with an icon for what each does.
+const BUILTIN_SKILLS: { name: string; icon: LucideIcon; tone: string }[] = [
+  { name: 'skill-creator', icon: Wand2, tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
+  { name: 'knowledge-wiki', icon: BookOpen, tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  { name: 'image-generation', icon: ImageIcon, tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
+]
+
+function builtinRank(skill: SkillInfo): number {
+  if (!skill.ships_with_install) return -1
+  const i = BUILTIN_SKILLS.findIndex((b) => b.name === skill.name)
+  return i < 0 ? BUILTIN_SKILLS.length : i
+}
+
+function compareInstalled(a: SkillInfo, b: SkillInfo): number {
+  const ra = builtinRank(a)
+  const rb = builtinRank(b)
+  if (ra >= 0 || rb >= 0) {
+    if (ra < 0) return 1
+    if (rb < 0) return -1
+    return ra - rb
+  }
+  return (b.installed_at || 0) - (a.installed_at || 0)
+}
+
+const SkillIcon: React.FC<{ skill: SkillInfo }> = ({ skill }) => {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [skill.icon])
+  if (skill.icon && !broken) {
+    return (
+      <img
+        src={skill.icon}
+        alt=""
+        draggable={false}
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
+        className={`w-9 h-9 rounded-lg object-cover flex-shrink-0 ${skill.enabled ? '' : 'opacity-50 grayscale'}`}
+      />
+    )
+  }
+  const builtin = skill.ships_with_install ? BUILTIN_SKILLS.find((b) => b.name === skill.name) : undefined
+  if (builtin) {
+    const Icon = builtin.icon
+    return (
+      <div
+        className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          skill.enabled ? builtin.tone : 'bg-inset-2 text-content-tertiary'
+        }`}
+      >
+        <Icon size={16} />
+      </div>
+    )
+  }
+  return (
+    <div className="w-9 h-9 rounded-lg bg-accent-soft flex items-center justify-center flex-shrink-0">
+      <Zap size={15} className={skill.enabled ? 'text-accent' : 'text-content-tertiary'} />
+    </div>
+  )
+}
+
 const cardClass = 'rounded-card border border-default bg-surface p-4 flex items-start gap-3'
 const iconBtnClass = 'flex-shrink-0 p-1 -my-1 rounded text-content-tertiary transition-colors cursor-pointer'
 
@@ -131,6 +383,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [servers, setServers] = useState<McpServerConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [toolsExpanded, setToolsExpanded] = useState(false)
+  const [tab, setTab] = useState<'skills' | 'tools'>('skills')
   // undefined: closed; null: adding; a config: editing that server.
   const [editing, setEditing] = useState<McpServerConfig | null | undefined>(undefined)
   const [addingSkill, setAddingSkill] = useState(false)
@@ -146,6 +399,19 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const readonly = skillEditor((s) => s.readonly)
   const edit = skillEditor((s) => s.edit)
   const editorRef = useRef<HTMLTextAreaElement>(null)
+  const [skillFiles, setSkillFiles] = useState<SkillFileEntry[]>([])
+  /** Directories the reader has folded away, by path. Empty means all open. */
+  const [foldedDirs, setFoldedDirs] = useState<Set<string>>(new Set())
+  // Whether the file list is showing at all. Remembered across sessions:
+  // someone who reads skills on a narrow window should not have to fold it
+  // away again on every visit.
+  const [filesPanelOpen, setFilesPanelOpen] = useState(
+    () => localStorage.getItem(SKILL_FILES_PANEL_KEY) !== '0'
+  )
+  const openSkillName = doc?.name
+  // A skill opens on its SKILL.md, which the tree lists under that name even
+  // though the document was opened without naming a path.
+  const currentPath = doc?.path || 'SKILL.md'
 
   const flash = (text: string) => {
     setNotice(text)
@@ -202,6 +468,26 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl])
 
+  // Keyed on the skill rather than on the open file: moving between two files
+  // of one skill must not refetch the tree they are both listed in. The tree is
+  // a convenience, so a failure leaves it empty rather than reporting itself.
+  useEffect(() => {
+    // The folds belonged to the tree being left behind, not to the next one.
+    setFoldedDirs(new Set())
+    if (!openSkillName) {
+      setSkillFiles([])
+      return
+    }
+    let live = true
+    apiClient
+      .listSkillFiles(openSkillName)
+      .then((files) => live && setSkillFiles(files))
+      .catch(() => live && setSkillFiles([]))
+    return () => {
+      live = false
+    }
+  }, [openSkillName])
+
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
     // Optimistic flip; revert on failure.
     setSkills((prev) => prev.map((s) => (s.name === skill.name ? { ...s, enabled } : s)))
@@ -220,8 +506,29 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const openSkillForEdit = async (skill: SkillInfo) => {
     await skillEditor
       .getState()
-      .open({ name: skill.name, label: skill.display_name || skill.name })
+      .open({ name: skill.name, label: skillLabel(skill).name })
     await skillEditor.getState().startEdit()
+  }
+
+  const toggleFilesPanel = () => {
+    const open = !filesPanelOpen
+    setFilesPanelOpen(open)
+    localStorage.setItem(SKILL_FILES_PANEL_KEY, open ? '1' : '0')
+  }
+
+  const toggleSkillDir = (path: string) =>
+    setFoldedDirs((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(path)) next.add(path)
+      return next
+    })
+
+  /** Show another of the open skill's files. */
+  const selectSkillFile = async (path: string) => {
+    if (!doc || currentPath === path) return
+    // `open` is what asks about an unsaved edit before the text area is
+    // replaced by another file's contents.
+    await skillEditor.getState().open({ ...doc, path })
   }
 
   const closeViewer = async () => {
@@ -279,6 +586,14 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   }
 
   const visibleTools = toolsExpanded ? tools : tools.slice(0, TOOLS_COLLAPSED_COUNT)
+  const Market = product.skills?.Market
+  const skillsFirst = !!product.skills?.skillsFirst
+  const showTools = !skillsFirst || tab === 'tools'
+  const showSkills = !skillsFirst || tab === 'skills'
+  // With a catalogue to install from: built-in skills first in a fixed order,
+  // then the rest newest first, so an install lands at the top of them.
+  const visibleSkills = Market ? [...skills].sort(compareInstalled) : skills
+  const openSkillVersion = doc ? skills.find((s) => s.name === doc.name)?.version : undefined
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -287,13 +602,29 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
           <h2 className="text-xl font-bold text-content">{t('skills_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('skills_desc')}</p>
         </div>
+        {skillsFirst && !doc && (
+          <div className="flex items-center gap-0.5 p-0.5 rounded-btn border border-default">
+            {(['skills', 'tools'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={`px-3 py-1 rounded-btn text-xs font-medium transition-colors cursor-pointer ${
+                  tab === key ? 'bg-accent-soft text-accent' : 'text-content-secondary hover:bg-surface-2'
+                }`}
+              >
+                {t(key === 'skills' ? 'skills_section_title' : 'skills_tab_tools')}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <DocNotice store={skillEditor} />
 
       {doc ? (
         <div className="flex-1 flex flex-col min-h-0 border-t border-default">
-          <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
+          <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0">
             <button
               onClick={() => void closeViewer()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-sm text-content-secondary hover:bg-inset border border-strong transition-colors cursor-pointer"
@@ -301,8 +632,8 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
               <ArrowLeft size={14} />
               {t('skill_back')}
             </button>
-            <h3 className="flex-1 text-sm font-semibold text-content truncate">
-              {doc.label}
+            <h3 className="min-w-0 text-sm font-semibold text-content truncate">
+              {doc.path ? `${doc.label}/${doc.path}` : doc.label}
               {edit?.dirty && (
                 <span className="text-accent" title={t('ws_edit_unsaved')}>
                   {' '}
@@ -310,6 +641,13 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 </span>
               )}
             </h3>
+            <span className="flex-1 min-w-0 flex items-center">
+              {openSkillVersion && (
+                <span className="px-1.5 py-0.5 rounded text-[11px] font-medium text-content-tertiary bg-inset">
+                  v{openSkillVersion}
+                </span>
+              )}
+            </span>
             {readonly && !docLoading && (
               <span
                 title={readonly}
@@ -321,23 +659,55 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
             )}
             <DocActions store={skillEditor} textareaRef={editorRef} />
           </div>
-          {edit ? (
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <DocEditor key={doc.name} store={skillEditor} textareaRef={editorRef} />
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto">
-              <div className="max-w-3xl mx-auto px-6 py-6">
-                {docLoading ? (
-                  <div className="flex items-center text-content-tertiary py-8">
-                    <Loader2 size={16} className="animate-spin mr-2" />
+          {/* One card for the file list and the document, inset to the header's
+              padding so its edges line up with Back and the actions above. */}
+          <div className="flex-1 min-h-0 px-6 pb-6">
+            <div className="relative h-full">
+              {/* Folding the list away is the only way back to a full-width
+                  document, so the switch cannot live inside the panel it hides.
+                  It rides the border instead: the divider while the list is
+                  out, the card's left edge once it is folded. */}
+              {skillFiles.length > 0 && (
+                <SkillFilesSwitch expanded={filesPanelOpen} onClick={toggleFilesPanel} />
+              )}
+              <div className="h-full flex rounded-card border border-default bg-surface overflow-hidden">
+                {skillFiles.length > 0 && filesPanelOpen && (
+                  <SkillFileTree
+                    files={skillFiles}
+                    current={currentPath}
+                    folded={foldedDirs}
+                    onSelect={(path) => void selectSkillFile(path)}
+                    onToggleDir={toggleSkillDir}
+                  />
+                )}
+                {edit ? (
+                  <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
+                    <DocEditor
+                      key={`${doc.name}/${doc.path || ''}`}
+                      store={skillEditor}
+                      textareaRef={editorRef}
+                    />
                   </div>
                 ) : (
-                  <SkillContentView content={content} />
+                  <DocView store={skillEditor}>
+                    <div className="max-w-3xl mx-auto px-8 py-6">
+                      {docLoading ? (
+                        <div className="flex items-center text-content-tertiary py-8">
+                          <Loader2 size={16} className="animate-spin mr-2" />
+                        </div>
+                      ) : (
+                        <SkillContentView
+                          content={content}
+                          path={currentPath}
+                          file={skillFiles.find((file) => file.path === currentPath)}
+                        />
+                      )}
+                    </div>
+                  </DocView>
                 )}
               </div>
             </div>
-          )}
+          </div>
         </div>
       ) : (
       <div className="flex-1 overflow-y-auto border-t border-default">
@@ -349,203 +719,209 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
             </div>
           ) : (
             <div className="space-y-10">
-              <Section
-                title={t('tools_section_title')}
-                count={tools.length}
-                action={
-                  tools.length > TOOLS_COLLAPSED_COUNT && (
-                    <LinkBtn onClick={() => setToolsExpanded((v) => !v)}>
-                      {t(toolsExpanded ? 'tools_collapse' : 'tools_show_all')}
-                      <ChevronDown size={12} className={`transition-transform ${toolsExpanded ? 'rotate-180' : ''}`} />
-                    </LinkBtn>
-                  )
-                }
-              >
-                {tools.length === 0 ? (
-                  <p className="text-sm text-content-tertiary py-2">{t('tools_empty')}</p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {visibleTools.map((tool) => {
-                      const Icon = TOOL_ICONS[tool.name] || Wrench
-                      return (
-                        <div key={tool.name} className={cardClass}>
-                          <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                            <Icon size={15} className="text-blue-500" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <span className="block text-sm font-medium text-content font-mono truncate">{tool.name}</span>
-                            <p className="text-xs text-content-tertiary leading-relaxed mt-1 line-clamp-2">{tool.description || '--'}</p>
-                          </div>
-                        </div>
+              {showTools && (
+                <>
+                  <Section
+                    title={t('tools_section_title')}
+                    count={tools.length}
+                    action={
+                      tools.length > TOOLS_COLLAPSED_COUNT && (
+                        <LinkBtn onClick={() => setToolsExpanded((v) => !v)}>
+                          {t(toolsExpanded ? 'tools_collapse' : 'tools_show_all')}
+                          <ChevronDown size={12} className={`transition-transform ${toolsExpanded ? 'rotate-180' : ''}`} />
+                        </LinkBtn>
                       )
-                    })}
-                  </div>
-                )}
-              </Section>
-
-              <Section
-                title={t('mcp_section_title')}
-                count={servers.length}
-                action={
-                  <ActionBtn onClick={() => setEditing(null)}>
-                    <Plus size={12} />
-                    {t('mcp_add')}
-                  </ActionBtn>
-                }
-              >
-                {mcpError && <p className="mb-3 text-sm text-danger">{mcpError}</p>}
-                {servers.length === 0 ? (
-                  !mcpError && (
-                    <EmptyState icon={Plug} title={t('mcp_empty')} hint={t('mcp_empty_hint')} tone="amber" />
-                  )
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {servers.map((server) => {
-                      const type = mcpTransport(server)
-                      const summary =
-                        type === 'stdio'
-                          ? [server.command, ...(server.args || [])].filter(Boolean).join(' ')
-                          : server.url || ''
-                      return (
-                        <div
-                          key={server.name}
-                          onClick={() => setEditing(server)}
-                          className={`${cardClass} cursor-pointer hover:border-strong transition-colors`}
-                        >
-                          <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                            <Plug size={15} className={server.status === 'disabled' ? 'text-content-tertiary' : 'text-amber-500'} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm font-medium text-content font-mono truncate">{server.name}</span>
-                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-inset-2 text-content-tertiary">
-                                {MCP_TRANSPORT_LABELS[type] || type}
-                              </span>
-                              <span className={`flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] ${mcpStatusClass(server.status)}`}>
-                                {mcpStatusLabel(server.status)}
-                              </span>
-                              <span className="flex-1" />
-                              <button
-                                type="button"
-                                title={t('mcp_edit')}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setEditing(server)
-                                }}
-                                className={`${iconBtnClass} hover:text-content-secondary`}
-                              >
-                                <Pencil size={11} />
-                              </button>
-                              <button
-                                type="button"
-                                title={t('mcp_delete')}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  void removeServer(server.name)
-                                }}
-                                className={`${iconBtnClass} hover:text-red-500`}
-                              >
-                                <Trash2 size={11} />
-                              </button>
+                    }
+                  >
+                    {tools.length === 0 ? (
+                      <p className="text-sm text-content-tertiary py-2">{t('tools_empty')}</p>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {visibleTools.map((tool) => {
+                          const Icon = TOOL_ICONS[tool.name] || Wrench
+                          return (
+                            <div key={tool.name} className={cardClass}>
+                              <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                                <Icon size={15} className="text-blue-500" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="block text-sm font-medium text-content font-mono truncate">{tool.name}</span>
+                                <p className="text-xs text-content-tertiary leading-relaxed mt-1 line-clamp-2">{tool.description || '--'}</p>
+                              </div>
                             </div>
-                            <p className="text-xs text-content-tertiary font-mono truncate" title={summary}>
-                              {summary || '--'}
-                            </p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </Section>
-
-              <Section
-                title={t('skills_section_title')}
-                count={skills.length}
-                action={
-                  <>
-                    {!product.skills?.uploadOnly && (
-                      <a
-                        href={SKILL_HUB_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-btn text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-2 transition-colors"
-                      >
-                        <Compass size={12} />
-                        {t('skills_hub_btn')}
-                        <ExternalLink size={10} className="opacity-60" />
-                      </a>
-                    )}
-                    <ActionBtn onClick={() => setAddingSkill(true)}>
-                      <Plus size={12} />
-                      {t('skill_add')}
-                    </ActionBtn>
-                  </>
-                }
-              >
-                {skillError && <p className="mb-3 text-sm text-danger">{skillError}</p>}
-                {skills.length === 0 ? (
-                  <EmptyState icon={Zap} title={t('skills_empty')} hint={t(product.skills?.uploadOnly ? 'skills_empty_hint_upload' : 'skills_empty_hint')} tone="accent" />
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {skills.map((skill) => (
-                      <div
-                        key={skill.name}
-                        onClick={() =>
-                          void skillEditor
-                            .getState()
-                            .open({ name: skill.name, label: skill.display_name || skill.name })
-                        }
-                        title={t('skill_open_hint')}
-                        className={`${cardClass} cursor-pointer transition-all ${
-                          freshSkills.has(skill.name)
-                            ? 'border-accent shadow-[0_0_0_3px_var(--accent-soft)]'
-                            : 'hover:border-strong'
-                        }`}
-                      >
-                        <div className="w-9 h-9 rounded-lg bg-accent-soft flex items-center justify-center flex-shrink-0">
-                          <Zap size={15} className={skill.enabled ? 'text-accent' : 'text-content-tertiary'} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-content truncate flex-1">
-                              {skill.display_name || skill.name}
-                            </span>
-                            <button
-                              type="button"
-                              title={t('skill_edit_hint')}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void openSkillForEdit(skill)
-                              }}
-                              className={`${iconBtnClass} hover:text-content-secondary`}
-                            >
-                              <Pencil size={11} />
-                            </button>
-                            {skill.deletable && (
-                              <button
-                                type="button"
-                                title={t('skill_delete')}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  void uninstall(skill.name)
-                                }}
-                                className={`${iconBtnClass} hover:text-red-500`}
-                              >
-                                <Trash2 size={11} />
-                              </button>
-                            )}
-                            <span onClick={(e) => e.stopPropagation()}>
-                              <Toggle checked={skill.enabled} onChange={(v) => toggle(skill, v)} />
-                            </span>
-                          </div>
-                          <p className="text-xs text-content-tertiary leading-relaxed line-clamp-2">{skill.description || '--'}</p>
-                        </div>
+                          )
+                        })}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
+                    )}
+                  </Section>
+
+                  <Section
+                    title={t('mcp_section_title')}
+                    count={servers.length}
+                    action={
+                      <ActionBtn onClick={() => setEditing(null)}>
+                        <Plus size={12} />
+                        {t('mcp_add')}
+                      </ActionBtn>
+                    }
+                  >
+                    {mcpError && <p className="mb-3 text-sm text-danger">{mcpError}</p>}
+                    {servers.length === 0 ? (
+                      !mcpError && (
+                        <EmptyState icon={Plug} title={t('mcp_empty')} hint={t('mcp_empty_hint')} tone="amber" />
+                      )
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {servers.map((server) => {
+                          const type = mcpTransport(server)
+                          const summary =
+                            type === 'stdio'
+                              ? [server.command, ...(server.args || [])].filter(Boolean).join(' ')
+                              : server.url || ''
+                          return (
+                            <div
+                              key={server.name}
+                              onClick={() => setEditing(server)}
+                              className={`${cardClass} cursor-pointer hover:border-strong transition-colors`}
+                            >
+                              <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                                <Plug size={15} className={server.status === 'disabled' ? 'text-content-tertiary' : 'text-amber-500'} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-sm font-medium text-content font-mono truncate">{server.name}</span>
+                                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-inset-2 text-content-tertiary">
+                                    {MCP_TRANSPORT_LABELS[type] || type}
+                                  </span>
+                                  <span className={`flex-shrink-0 px-1.5 py-0.5 rounded-full text-[10px] ${mcpStatusClass(server.status)}`}>
+                                    {mcpStatusLabel(server.status)}
+                                  </span>
+                                  <span className="flex-1" />
+                                  <button
+                                    type="button"
+                                    title={t('mcp_edit')}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setEditing(server)
+                                    }}
+                                    className={`${iconBtnClass} hover:text-content-secondary`}
+                                  >
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title={t('mcp_delete')}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void removeServer(server.name)
+                                    }}
+                                    className={`${iconBtnClass} hover:text-red-500`}
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                                <p className="text-xs text-content-tertiary font-mono truncate" title={summary}>
+                                  {summary || '--'}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </Section>
+                </>
+              )}
+
+              {showSkills && (
+                <>
+                  <Section
+                    title={t(Market ? 'skills_installed_title' : 'skills_section_title')}
+                    count={skills.length}
+                    action={
+                      <>
+                        {!product.skills?.uploadOnly && (
+                          <a
+                            href={SKILL_HUB_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-btn text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-2 transition-colors"
+                          >
+                            <Compass size={12} />
+                            {t('skills_hub_btn')}
+                            <ExternalLink size={10} className="opacity-60" />
+                          </a>
+                        )}
+                        <ActionBtn onClick={() => setAddingSkill(true)}>
+                          <Plus size={12} />
+                          {t(Market ? 'skill_install_btn' : 'skill_add')}
+                        </ActionBtn>
+                      </>
+                    }
+                  >
+                    {skillError && <p className="mb-3 text-sm text-danger">{skillError}</p>}
+                    {skills.length === 0 ? (
+                      <EmptyState icon={Zap} title={t('skills_empty')} hint={t(product.skills?.uploadOnly ? 'skills_empty_hint_upload' : 'skills_empty_hint')} tone="accent" />
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {visibleSkills.map((skill) => (
+                          <div
+                            key={skill.name}
+                            onClick={() =>
+                              void skillEditor
+                                .getState()
+                                .open({ name: skill.name, label: skillLabel(skill).name })
+                            }
+                            title={t('skill_open_hint')}
+                            className={`${cardClass} cursor-pointer transition-all ${
+                              freshSkills.has(skill.name)
+                                ? 'border-accent shadow-[0_0_0_3px_var(--accent-soft)]'
+                                : 'hover:border-strong'
+                            }`}
+                          >
+                            <SkillIcon skill={skill} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-medium text-content truncate flex-1">
+                                  {skillLabel(skill).name}
+                                </span>
+                                <button
+                                  type="button"
+                                  title={t('skill_edit_hint')}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    void openSkillForEdit(skill)
+                                  }}
+                                  className={`${iconBtnClass} hover:text-content-secondary`}
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                                {skill.deletable && (
+                                  <button
+                                    type="button"
+                                    title={t('skill_delete')}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void uninstall(skill.name)
+                                    }}
+                                    className={`${iconBtnClass} hover:text-red-500`}
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                )}
+                                <span onClick={(e) => e.stopPropagation()}>
+                                  <Toggle checked={skill.enabled} onChange={(v) => toggle(skill, v)} />
+                                </span>
+                              </div>
+                              <p className="text-xs text-content-tertiary leading-relaxed line-clamp-2">{skillLabel(skill).description || '--'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Section>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -558,7 +934,17 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
         onClose={() => setEditing(undefined)}
         onSave={saveFromEditor}
       />
-      <SkillAddModal open={addingSkill} onClose={() => setAddingSkill(false)} onInstalled={onSkillsInstalled} />
+      <SkillAddModal
+        open={addingSkill}
+        installed={skills}
+        onClose={() => setAddingSkill(false)}
+        onInstalled={onSkillsInstalled}
+        onCreated={(name) => {
+          setAddingSkill(false)
+          flash(`${t('skill_new_created')}: ${name}`)
+          onSkillsInstalled([name])
+        }}
+      />
 
       {notice && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-btn bg-neutral-900/90 text-white text-sm shadow-lg pointer-events-none">

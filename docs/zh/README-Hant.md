@@ -27,7 +27,7 @@ CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋�
   <a href="https://docs.cowagent.ai/zh/guide/quick-start">🚀 快速開始</a> &nbsp;·&nbsp;
   <a href="https://skills.cowagent.ai/">🧩 技能廣場</a> &nbsp;·&nbsp;
   <a href="https://cowagent.ai/zh/download/">💻 下載客戶端</a> &nbsp;·&nbsp;
-  <a href="https://link-ai.tech/cowagent/create">☁️ 線上體驗</a>
+  <a href="https://link-ai.tech/cowagent/create?utm_source=cowagent&utm_medium=readme&utm_campaign=nav">☁️ 線上體驗</a>
 </p>
 
 <br/>
@@ -227,6 +227,8 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 ## 🏷 更新日誌
 
+> **2026.10.14：** [v2.2.1](https://github.com/zhayujie/CowAgent/releases/tag/2.2.1) — 新增產物中心與自訂選單、開放 Agent 對話 API、模型快取與上下文成本優化、工具、通道與安全性完善
+
 > **2026.09.30：** [v2.2.0](https://github.com/zhayujie/CowAgent/releases/tag/2.2.0) — 新增能力中心、多 Agent 協作優化、Web 控制台重構、模型快取命中率提升、穩定性與安全全面加強
 
 > **2026.09.14：** [v2.1.9](https://github.com/zhayujie/CowAgent/releases/tag/2.1.9) — 多 Agent 協作體驗優化、模型列表配置與多兜底模型、通道接入修復、新增圖像模型（gpt-image-2.5）、語音修復
@@ -266,7 +268,7 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 也可透過以下方式獲取支援：
 
 - 🐛 [提交 Issue](https://github.com/zhayujie/CowAgent/issues)
-- 🤖 線上 AI 助手：[專案小助手](https://link-ai.tech/app/Kv2fXJcH)（基於專案知識庫）
+- 🤖 線上 AI 助手：[專案小助手](https://link-ai.tech/app/Kv2fXJcH?utm_source=cowagent&utm_medium=readme&utm_campaign=support)（基於專案知識庫）
 
 <br/>
 
@@ -280,11 +282,11 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 ## 🏢 企業服務
 
-<a href="https://link-ai.tech" target="_blank"><img width="650" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/link-ai-intro.png" /></a>
+<a href="https://link-ai.tech/?utm_source=cowagent&utm_medium=readme&utm_campaign=enterprise" target="_blank"><img width="650" src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/community/link-ai-intro.png" /></a>
 
-> [LinkAI](https://link-ai.tech/) 是面向企業和個人的一站式 AI 智慧體平臺，為 CowAgent 提供雲端託管和企業級支援：
+> [LinkAI](https://link-ai.tech/?utm_source=cowagent&utm_medium=readme&utm_campaign=enterprise) 是面向企業和個人的一站式 AI 智慧體平臺，為 CowAgent 提供雲端託管和企業級支援：
 >
-> - **🚀 免部署線上執行**：無需伺服器即可建立 [CowAgent 線上助理](https://link-ai.tech/cowagent/create)，1 分鐘擁有專屬 Agent
+> - **🚀 免部署線上執行**：無需伺服器即可建立 [CowAgent 線上助理](https://link-ai.tech/cowagent/create?utm_source=cowagent&utm_medium=readme&utm_campaign=enterprise)，1 分鐘擁有專屬 Agent
 > - **🧠 Agent 基礎設施**：聚合主流大模型、知識庫、資料庫、技能、工作流，提供開箱即用的 Agent 能力擴充
 > - **🏢 企業級協作**：提供團隊協作、許可權分級、審計日誌、私有化部署等能力，讓 Agent 安全落地企業場景
 

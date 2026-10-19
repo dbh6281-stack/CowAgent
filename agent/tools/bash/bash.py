@@ -202,7 +202,7 @@ SAFETY:
             if os.path.exists(env_file):
                 try:
                     from dotenv import dotenv_values
-                    dotenv_vars = dotenv_values(env_file)
+                    dotenv_vars = {key: value for key, value in dotenv_values(env_file).items() if value is not None}
                     env.update(dotenv_vars)
                     logger.debug(f"[Bash] Loaded {len(dotenv_vars)} variables from {env_file}")
                 except ImportError:
@@ -319,9 +319,9 @@ SAFETY:
 
             # Check if we need to save full output to temp file
             temp_file_path = None
-            total_bytes = len(output.encode('utf-8'))
+            truncation = truncate_tail(output)
 
-            if total_bytes > DEFAULT_MAX_BYTES:
+            if truncation.truncated:
                 # Save full output to temp file. encoding='utf-8' is required:
                 # the default text-mode encoding is the platform locale (e.g.
                 # cp936/GBK on Chinese Windows), which raises UnicodeEncodeError
@@ -331,8 +331,6 @@ SAFETY:
                     f.write(output)
                     temp_file_path = f.name
 
-            # Apply tail truncation
-            truncation = truncate_tail(output)
             output_text = truncation.content or "(no output)"
 
             # Build result

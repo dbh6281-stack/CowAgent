@@ -4,13 +4,24 @@ import os
 import sys
 import subprocess
 import time
-from typing import Optional
+from typing import List, Optional
 
 import click
 
 from cli.utils import _ensure_project_on_path, get_project_root, load_config_json
 
 _IS_WIN = sys.platform == "win32"
+
+
+def _configured_channels() -> List[str]:
+    channel = load_config_json().get("channel_type", "")
+    if isinstance(channel, str):
+        names = [c.strip() for c in channel.split(",") if c.strip()]
+    elif isinstance(channel, (list, tuple)):
+        names = [str(c).strip() for c in channel if str(c).strip()]
+    else:
+        names = []
+    return names
 
 
 def _is_terminal_only() -> bool:
@@ -20,14 +31,7 @@ def _is_terminal_only() -> bool:
     background daemon mode (stdout/stdin detached). When terminal is the only
     channel, `start` must run in the foreground so it can own the tty.
     """
-    channel = load_config_json().get("channel_type", "")
-    if isinstance(channel, str):
-        names = [c.strip() for c in channel.split(",") if c.strip()]
-    elif isinstance(channel, (list, tuple)):
-        names = [str(c).strip() for c in channel if str(c).strip()]
-    else:
-        names = []
-    return names == ["terminal"]
+    return _configured_channels() == ["terminal"]
 
 
 def _get_pid_file():
@@ -53,7 +57,9 @@ def _is_pid_alive(pid: int) -> bool:
         try:
             os.kill(pid, 0)
             return True
-        except (ProcessLookupError, PermissionError):
+        except PermissionError:
+            return True
+        except ProcessLookupError:
             return False
 
 
@@ -148,6 +154,8 @@ def start(foreground, no_logs):
         with open(log_file, "a") as log:
             proc = subprocess.Popen(
                 [python, app_py],
+                # A terminal channel exits the whole service on stdin EOF.
+                stdin=None if "terminal" in _configured_channels() else subprocess.DEVNULL,
                 stdout=log,
                 stderr=log,
                 **popen_kwargs,
@@ -178,6 +186,12 @@ def stop():
                 break
         else:
             _kill_pid(pid, force=True)
+    except PermissionError:
+        click.echo(click.style(
+            f"✗ No permission to stop PID {pid}; it was likely started by another user (try sudo).",
+            fg="red",
+        ))
+        sys.exit(1)
     except (ProcessLookupError, OSError):
         pass
 

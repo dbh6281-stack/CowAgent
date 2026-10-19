@@ -5,6 +5,9 @@ Supports:
 - HTML web pages: extracts readable text content
 - Document files (PDF, Word, TXT, Markdown, etc.): downloads to workspace/tmp and parses content
 - Plain text downloads: prefers a declared HTTP charset, then existing decoding fallbacks
+- DeepSeek Fetch backend (opt-in via tools.web_fetch.provider="deepseek"):
+  returns the page as Markdown through DeepSeek's official Fetch API
+  (https://api-docs.deepseek.com/guides/search)
 """
 
 import os
@@ -20,7 +23,8 @@ from agent.tools.base_tool import BaseTool, ToolResult
 from agent.tools.utils.truncate import truncate_head, format_size
 from agent.tools.utils.url_safety import validate_url_safe, safe_get
 from common.log import logger
-from common.media_download import MediaTooLargeError, read_response
+from common.media_download import MediaTooLargeError, read_response, save_response
+from config import conf
 
 
 DEFAULT_TIMEOUT = 30
@@ -48,6 +52,38 @@ _META_HTTP_EQUIV_RE = re.compile(
     rb'<meta[^>]+http-equiv\s*=\s*["\']?Content-Type["\']?[^>]+content\s*=\s*["\'][^"\']*charset=([\w\-]+)',
     re.IGNORECASE,
 )
+
+
+def _tools_web_fetch_conf() -> dict:
+    """Return the tools.web_fetch config block (dict-like)."""
+    tools_cfg = conf().get("tools") or {}
+    if not isinstance(tools_cfg, dict):
+        return {}
+    block = tools_cfg.get("web_fetch") or {}
+    return block if isinstance(block, dict) else {}
+
+
+def _conf_str(value, default: str = "") -> str:
+    """A stripped string config value; non-strings (hand-edited JSON) and blanks give ``default``."""
+    return (value.strip() if isinstance(value, str) else "") or default
+
+
+def _fetch_provider() -> str:
+    """The fetch backend: "direct" (default, fetch and parse locally) or
+    "deepseek" (DeepSeek's official Fetch API, returns the page as Markdown).
+    Unknown values fail loudly so a typo never silently changes backends."""
+    provider = _conf_str(_tools_web_fetch_conf().get("provider"), "direct").lower()
+    if provider not in ("direct", "deepseek"):
+        raise ValueError(
+            f"Unknown tools.web_fetch.provider {provider!r}; expected 'direct' or 'deepseek'"
+        )
+    return provider
+
+
+def _deepseek_api_key() -> str:
+    """The DeepSeek model key, which the Fetch API also accepts."""
+    key = _conf_str(conf().get("deepseek_api_key"), "")
+    return key or os.environ.get("DEEPSEEK_API_KEY", "").strip()
 
 
 def _extract_charset_from_content_type(content_type: str) -> Optional[str]:
@@ -159,16 +195,84 @@ class WebFetch(BaseTool):
             return ToolResult.fail("Error: Invalid URL (must start with http:// or https://)")
 
         # SSRF guard: reject URLs that resolve to private/loopback/link-local/
-        # cloud-metadata addresses before any request is issued.
+        # cloud-metadata addresses before any request is issued. Applies to
+        # both backends, including DeepSeek Fetch (the URL still leaves this
+        # machine's policy boundary via their API).
         try:
             validate_url_safe(url)
+        except ValueError as e:
+            return ToolResult.fail(f"Error: {e}")
+
+        try:
+            provider = _fetch_provider()
         except ValueError as e:
             return ToolResult.fail(f"Error: {e}")
 
         if _is_document_url(url):
             return self._fetch_document(url)
 
+        if provider == "deepseek":
+            return self._fetch_deepseek(url)
+
         return self._fetch_webpage(url)
+
+    # ---- DeepSeek Fetch backend ----
+
+    def _fetch_deepseek(self, url: str) -> ToolResult:
+        """Fetch a page as Markdown through DeepSeek's official Fetch API.
+
+        Useful for pages the direct backend cannot render (JS-heavy sites);
+        billed per successful request, so it stays opt-in.
+        """
+        api_key = _deepseek_api_key()
+        if not api_key:
+            return ToolResult.fail(
+                "Error: tools.web_fetch.provider is 'deepseek' but no DeepSeek API key is configured. "
+                "Set deepseek_api_key or the DEEPSEEK_API_KEY environment variable."
+            )
+
+        from agent.tools.web_search.web_search import deepseek_tools_url
+        endpoint = deepseek_tools_url(conf().get("deepseek_api_base"), "fetch")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        logger.debug(f"[WebFetch] deepseek: url='{url}'")
+        try:
+            resp = requests.post(endpoint, headers=headers, json={"url": url}, timeout=DEFAULT_TIMEOUT)
+        except requests.Timeout:
+            return ToolResult.fail(f"Error: DeepSeek Fetch request timed out after {DEFAULT_TIMEOUT}s")
+        except requests.ConnectionError:
+            return ToolResult.fail("Error: Failed to connect to DeepSeek Fetch API")
+        except Exception as e:
+            logger.error(f"[WebFetch] DeepSeek Fetch unexpected error: {e}", exc_info=True)
+            return ToolResult.fail(f"Error: DeepSeek Fetch failed - {str(e)}")
+
+        if resp.status_code == 401:
+            return ToolResult.fail("Error: Invalid DeepSeek API key.")
+        if resp.status_code == 402:
+            return ToolResult.fail("Error: DeepSeek API — insufficient balance. Top up at https://platform.deepseek.com")
+        if resp.status_code == 403:
+            return ToolResult.fail("Error: DeepSeek Fetch rejected the URL (security policy).")
+        if resp.status_code == 404:
+            return ToolResult.fail(f"Error: DeepSeek Fetch could not retrieve usable content for URL: {url}")
+        if resp.status_code == 429:
+            return ToolResult.fail("Error: DeepSeek Fetch API rate limit reached (5 QPS per account).")
+        if resp.status_code != 200:
+            return ToolResult.fail(f"Error: DeepSeek Fetch API returned HTTP {resp.status_code}: {resp.text[:200]}")
+
+        data = resp.json()
+        # Business-level errors use the OpenAI-compatible {"error": {...}}
+        # envelope, with param always null.
+        if isinstance(data, dict) and data.get("error"):
+            err = data["error"] or {}
+            return ToolResult.fail(f"Error: DeepSeek Fetch returned {err.get('code')}: {err.get('message', '')}")
+
+        title = data.get("title") or "Untitled"
+        content = data.get("content") or ""
+        if not content.strip():
+            return ToolResult.fail(f"Error: DeepSeek Fetch returned no content for URL: {url}")
+        return ToolResult.success(f"Title: {title}\n\nContent:\n{content}")
 
     # ---- Safe request helper ----
 
@@ -233,8 +337,13 @@ class WebFetch(BaseTool):
 
             response.encoding = self._detect_encoding(response)
             html = response.text
-            title = self._extract_title(html)
-            text = self._extract_text(html)
+            media_type = content_type.split(";", 1)[0].strip().lower()
+            if media_type in ("text/plain", "application/json"):
+                title = "Untitled"
+                text = html
+            else:
+                title = self._extract_title(html)
+                text = self._extract_text(html)
 
             return ToolResult.success(f"Title: {title}\n\nContent:\n{text}")
         finally:
@@ -262,24 +371,17 @@ class WebFetch(BaseTool):
                     response = self._safe_get(url, stream=True)
                 response.raise_for_status()
 
-                content_length = int(response.headers.get("Content-Length", 0))
+                content_length = _parse_content_length(response)
                 if content_length > MAX_FILE_SIZE:
                     return ToolResult.fail(
                         f"Error: File too large ({format_size(content_length)} > {format_size(MAX_FILE_SIZE)})"
                     )
 
-                downloaded = 0
-                with open(local_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        downloaded += len(chunk)
-                        if downloaded > MAX_FILE_SIZE:
-                            f.close()
-                            os.remove(local_path)
-                            return ToolResult.fail(
-                                f"Error: File too large (>{format_size(MAX_FILE_SIZE)}), download aborted"
-                            )
-                        f.write(chunk)
+                save_response(response, local_path, MAX_FILE_SIZE, max_seconds=PAGE_READ_SECONDS)
 
+            except MediaTooLargeError:
+                self._cleanup_file(local_path)
+                return ToolResult.fail(f"Error: File too large (>{format_size(MAX_FILE_SIZE)}), download aborted")
             except requests.Timeout:
                 self._cleanup_file(local_path)
                 return ToolResult.fail(f"Error: Download from {parsed.netloc} timed out after {DEFAULT_TIMEOUT}s")

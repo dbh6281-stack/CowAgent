@@ -1,7 +1,8 @@
 """The skills view's endpoints: /api/tools and /api/skills.
 
 The built-in tools the Agent can call, the skills installed alongside them,
-and the viewer that reads a skill's definition file.
+the viewer that reads a skill's files, and the two ways a new skill arrives:
+written from a form, or uploaded and previewed before it is installed.
 """
 
 import json
@@ -12,12 +13,15 @@ import tempfile
 import threading
 import time
 import uuid
+from typing import List, Optional
 
 import web
 
 from channel.web.core._common import (
+    _first_value,
     _get_workspace_root,
     _multipart_lists,
+    _read_uploaded_file_bytes_limited,
     _request_agent_id,
     _require_auth,
     _scoped_agent_id,
@@ -202,6 +206,27 @@ def _skill_service(agent_id: str = ''):
     return SkillService(SkillManager(custom_dir=custom_dir))
 
 
+def _record_staged_fields(staging_dir: str, installed: list, service) -> None:
+    """Carry the fields a configured Skill Hub registry recorded at staging
+    (category, display_description, icon, version) into the live config."""
+    from cli.commands.skill import _read_staged_config
+
+    if len(installed) != 1:
+        return
+    entry = _read_staged_config(staging_dir).get(installed[0])
+    if not isinstance(entry, dict):
+        return
+    # A plain staged entry carries no registry fields; applying it would drop
+    # the icon/version a reinstalled market skill already has.
+    if entry.get("category", "skill") == "skill" and not any(
+            entry.get(k) for k in ("display_description", "icon", "version")):
+        return
+    try:
+        service.record_install(installed[0], entry)
+    except Exception as e:
+        logger.warning(f"[WebChannel] record staged skill fields failed: {e}")
+
+
 class McpServersHandler:
     """List and persist MCP servers from the Agent's mcp.json."""
 
@@ -303,7 +328,7 @@ class SkillsHandler:
                 for skill in skills:
                     if isinstance(skill, dict):
                         for k, v in list(skill.items()):
-                            if k in ("name", "description", "display_name") and isinstance(v, str):
+                            if k in ("name", "description", "display_name", "display_description") and isinstance(v, str):
                                 skill[k] = i18n.to_traditional(v)
             return json.dumps({"status": "success", "skills": skills}, ensure_ascii=False)
         except Exception as e:
@@ -364,9 +389,11 @@ class SkillsHandler:
                     return json.dumps({"status": "error", "message": "names must be a list"})
                 try:
                     installed = commit_staged(staged["dir"], names, agent_id=staged["agent_id"])
+                    service = _skill_service(staged["agent_id"])
+                    service.manager.refresh_skills()
+                    _record_staged_fields(staged["dir"], installed, service)
                 finally:
                     _staging.discard(body.get("token"))
-                _skill_service(staged["agent_id"]).manager.refresh_skills()
                 logger.info(f"[WebChannel] Skills installed: {installed}")
                 return json.dumps({"status": "success", "installed": installed}, ensure_ascii=False)
             elif action == "discard":
@@ -381,6 +408,12 @@ class SkillsHandler:
                 if result.error:
                     return json.dumps({"status": "error", "message": result.error})
                 service.manager.refresh_skills()
+                # What the caller knows about a single skill it installed: category,
+                # display_name, display_description, icon, version. A package of
+                # several has no one owner.
+                meta = body.get("meta")
+                if isinstance(meta, dict) and len(result.installed) == 1:
+                    service.record_install(result.installed[0], meta)
                 return json.dumps({
                     "status": "success",
                     "installed": result.installed,
@@ -394,6 +427,93 @@ class SkillsHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _oversize_body(limit: int) -> Optional[str]:
+    """An error response when the declared body is already over ``limit``.
+
+    Read from the header before the body is, so an oversized upload is refused
+    instead of being buffered first. A header that is missing or unreadable
+    simply does not trigger this; the per-file caps still apply.
+    """
+    try:
+        length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
+    except (TypeError, ValueError):
+        return None
+    if length > limit:
+        return json.dumps({"status": "error", "message": "upload too large"})
+    return None
+
+
+def _uploaded_files(params, max_bytes: int) -> List[dict]:
+    """The files a multipart request carries, each with the path it keeps.
+
+    A folder pick sends its files under ``files`` and their paths - relative to
+    the folder itself - under ``relative_paths``, the pairing the chat upload
+    already uses. A plain multi-file pick sends no paths, so each file keeps its
+    own name.
+    """
+    uploaded = params.get("files") or []
+    rel_paths = params.get("relative_paths") or []
+    if rel_paths and len(rel_paths) != len(uploaded):
+        raise ValueError("upload payload mismatch: a path per file is required")
+
+    items = []
+    for index, file_obj in enumerate(uploaded):
+        # NOTE: cgi.FieldStorage raises TypeError on a truthy check, so an
+        # uploaded file is always compared against None.
+        if file_obj is None:
+            continue
+        path = rel_paths[index] if rel_paths else getattr(file_obj, "filename", "")
+        # A form submitted with the file input left empty still sends the field,
+        # as a part with no file name. There is nothing to write for it.
+        if not path:
+            continue
+        items.append({
+            "path": path,
+            "content": _read_uploaded_file_bytes_limited(file_obj, max_bytes),
+        })
+    return items
+
+
+class SkillCreateHandler:
+    """
+    ``POST /api/skills/create`` - a skill written from the console's form.
+
+    Multipart rather than JSON, because the form collects a name, a description
+    and the instructions *and* any number of files to bundle beside them.
+    """
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.skills.service import SkillService
+
+            oversize = _oversize_body(SkillService.MAX_UPLOAD_TOTAL_SIZE)
+            if oversize:
+                return oversize
+
+            # Every field as a list: newer web.py keeps only the last of a
+            # repeated one, and the form repeats `files` per attachment.
+            params = _multipart_lists(SkillService.MAX_UPLOAD_FILES * 2 + 16)
+            service = _skill_service(_scoped_agent_id(params))
+            result = service.create({
+                "name": _first_value(params, "name", ""),
+                "description": _first_value(params, "description", ""),
+                "body": _first_value(params, "body", ""),
+                "files": _uploaded_files(params, SkillService.MAX_UPLOAD_FILE_SIZE),
+            })
+            logger.info(f"[WebChannel] Skill created: {result['name']} "
+                        f"({len(result['files'])} bundled file(s))")
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except ValueError as e:
+            # What the user typed or picked, refused: the name, the missing
+            # description, a file too large. Reported as itself, not as a 500.
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Skill create error: {e}", exc_info=True)
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+
 class SkillUploadHandler:
     """Stage an uploaded skill (archive, SKILL.md, or folder) for preview."""
 
@@ -404,7 +524,6 @@ class SkillUploadHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from channel.web.api.knowledge import _read_uploaded_file_bytes_limited
             from cli.commands.skill import stage_skill_upload
 
             content_length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
@@ -445,14 +564,42 @@ class SkillUploadHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+class SkillFilesHandler:
+    """
+    ``GET /api/skills/files`` - the files one skill is made of.
+
+    A skill is a directory: the console needs the tree to show anything beyond
+    its SKILL.md, since the files beside it - ``scripts/``, ``references/``,
+    bundled assets - are installed by an upload but named nowhere in the skill
+    list.
+    """
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(name='', agent_id='')
+            name = (params.name or '').strip()
+            if not name:
+                return json.dumps({"status": "error", "message": "name is required"})
+            result = _skill_service(_request_agent_id(params)).list_files(name)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Skill files error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
 class SkillContentHandler:
     """
-    A skill's definition file, for the console's viewer and editor.
+    One file of a skill, for the console's viewer and editor.
 
-    Addressed by skill name rather than by path, because the loader is what
-    resolves a name to a file: a workspace skill shadows a builtin of the same
-    name, and a builtin sits outside the workspace that the file APIs are
-    confined to.
+    The skill is addressed by name rather than by path, because the loader is
+    what resolves a name to a directory: a workspace skill shadows a builtin of
+    the same name, and a builtin sits outside the workspace that the file APIs
+    are confined to. ``path`` then names a file inside that directory, and
+    defaults to the skill's SKILL.md.
 
     Unlike the skill list, the text is served exactly as stored - no
     simplified-to-traditional conversion. What comes back here is what a save
@@ -464,11 +611,13 @@ class SkillContentHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            params = web.input(name='', agent_id='')
+            params = web.input(name='', path='', agent_id='')
             name = (params.name or '').strip()
             if not name:
                 return json.dumps({"status": "error", "message": "name is required"})
-            result = _skill_service(_request_agent_id(params)).read_content(name)
+            result = _skill_service(_request_agent_id(params)).read_content(
+                name, path=(params.path or '').strip() or None,
+            )
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})
@@ -493,11 +642,13 @@ class SkillContentHandler:
             try:
                 result = _skill_service(_request_agent_id(body)).write_content(
                     name, content, expected_mtime=body.get("expected_mtime"),
+                    path=(body.get("path") or "").strip() or None,
                 )
             except WorkspaceConflictError as e:
                 return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
 
-            logger.info(f"[WebChannel] Skill saved: {name} ({result['size']} bytes)")
+            logger.info(f"[WebChannel] Skill saved: {name}/{result['path']} "
+                        f"({result['size']} bytes)")
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"status": "error", "message": str(e)})

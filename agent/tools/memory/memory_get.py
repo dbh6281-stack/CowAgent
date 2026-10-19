@@ -79,6 +79,8 @@ class MemoryGetTool(BaseTool):
         
         if not path:
             return ToolResult.fail("Error: path parameter is required")
+        if num_lines is not None and num_lines <= 0:
+            return ToolResult.fail(f"Error: num_lines must be a positive number of lines (got {num_lines})")
         
         try:
             workspace_dir = self.memory_manager.config.get_workspace()
@@ -122,6 +124,9 @@ class MemoryGetTool(BaseTool):
 
             if not file_path.exists():
                 return ToolResult.fail(f"Error: File not found: {path}")
+
+            if not file_path.is_file():
+                return ToolResult.fail(f"Error: {path} is not a regular file")
             
             content = file_path.read_text(encoding='utf-8')
             lines = content.split('\n')

@@ -613,29 +613,44 @@ def _resolve_upload_path(upload_root: str, relative_path: str) -> Tuple[str, str
     return safe_rel_path, save_path
 
 
-def _read_uploaded_file_bytes(file_obj) -> bytes:
-    """Return uploaded content as bytes across web.py upload object variants."""
+def _read_uploaded_file_bytes(file_obj, max_bytes: Optional[int] = None) -> bytes:
+    """Return uploaded content as bytes across web.py upload object variants.
+
+    With ``max_bytes`` given, the read stops one byte past the limit, so the
+    caller can refuse an oversized upload without buffering all of it.
+    """
     if isinstance(file_obj, bytes):
         return file_obj
     if isinstance(file_obj, str):
         return file_obj.encode("utf-8")
 
+    # Passed through to ``read`` rather than as ``read(None)``: not every
+    # file-like object a web.py upload wraps takes a size argument at all.
+    size = () if max_bytes is None else (max_bytes + 1,)
     content = None
 
     if hasattr(file_obj, "file") and hasattr(file_obj.file, "read"):
-        content = file_obj.file.read()
+        content = file_obj.file.read(*size)
     elif hasattr(file_obj, "read"):
-        content = file_obj.read()
+        content = file_obj.read(*size)
     elif hasattr(file_obj, "value"):
         content = file_obj.value
 
     if content is None:
         raise ValueError("Unable to read uploaded file content")
-    if isinstance(content, bytes):
-        return content
     if isinstance(content, str):
-        return content.encode("utf-8")
-    raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
+        content = content.encode("utf-8")
+    if not isinstance(content, bytes):
+        raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
+    return content
+
+
+def _read_uploaded_file_bytes_limited(file_obj, max_bytes: int) -> bytes:
+    """Read uploaded content and fail once it exceeds ``max_bytes``."""
+    content = _read_uploaded_file_bytes(file_obj, max_bytes)
+    if len(content) > max_bytes:
+        raise ValueError("file too large")
+    return content
 
 
 def _raw_web_input():
@@ -795,29 +810,9 @@ def _session_roster(session_id: str, host_agent_id: str) -> List[dict]:
 
 
 def _addressed_agent_id(text: str, roster: List[dict]) -> str:
-    """The teammate this message names, or "" when it names nobody.
+    from agent.team_addressing import addressed_agent_id
 
-    Matching accepts the display name as well as the id, because the composer
-    writes the name — nobody types ``@agent-17n3e8`` on purpose. Longer labels
-    are tried first so that a name containing another name still resolves to
-    the one actually written.
-
-    Only a leading mention counts. Naming somebody mid-sentence is usually
-    talking *about* them ("ask Ops to..."), not handing them the turn.
-    """
-    stripped = (text or "").lstrip()
-    if not stripped.startswith("@"):
-        return ""
-    candidates = []
-    for item in roster:
-        for label in (item.get("name") or "", item.get("id") or ""):
-            if label:
-                candidates.append((label, item["id"]))
-    for label, agent_id in sorted(candidates, key=lambda pair: -len(pair[0])):
-        pattern = r"^@" + re.escape(label) + r"(?=[\s，,：:、]|$)"
-        if re.match(pattern, stripped, re.IGNORECASE):
-            return agent_id
-    return ""
+    return addressed_agent_id(text, roster)
 
 
 def _live_channel_manager():

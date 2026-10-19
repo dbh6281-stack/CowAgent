@@ -137,7 +137,7 @@ function addressedAgentId(text: string, roster: AgentBadge[]): string {
   }
   labels.sort((x, y) => y[0].length - x[0].length)
   for (const [label, id] of labels) {
-    const re = new RegExp(`^@${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s，,：:、]|$)`, 'i')
+    const re = new RegExp(`^@${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s,，:：、。！？；!?;]|$)`, 'i')
     if (re.test(stripped)) return id
   }
   return ''
@@ -309,6 +309,7 @@ function historyToMessage(m: HistoryMessage): ChatMessage {
     kind: m.kind,
     extras: m.extras,
     botSeq: m._seq,
+    usage: m.usage,
     isCancelled: cancelled || undefined,
     runState: m.run_state,
     attachments: attachments.length > 0 ? attachments : undefined,
@@ -645,6 +646,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               ...m,
               content: next,
               botSeq: data.bot_seq ?? m.botSeq,
+              usage: data.usage ?? m.usage,
               isStreaming: false,
             }
           })

@@ -88,10 +88,10 @@ function createUserMessageEl(content, timestamp, attachments) {
                 ${attachHtml}${textHtml}
             </div>
             <div class="flex items-center justify-end gap-2 mt-1.5">
-                <button class="edit-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('edit_message')}">
+                <button class="edit-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" data-tip-float data-tooltip="${t('edit_message')}">
                     <i class="fas fa-pen-to-square"></i>
                 </button>
-                <button class="delete-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer" title="${t('delete_message_title')}">
+                <button class="delete-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer" data-tip-float data-tooltip="${t('delete_message_title')}">
                     <i class="fas fa-trash"></i>
                 </button>
                 <span class="text-xs text-slate-400 dark:text-slate-500">${formatTime(timestamp)}</span>
@@ -405,6 +405,43 @@ function evolutionContentKey(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+// Per-reply provider usage, shown on hover so it stays out of the way. The
+// composer donut answers current-window usage; this answers "what did this
+// reply cost?" even after a reload.
+function renderMessageUsageHtml(usage) {
+    if (!usage || typeof usage !== 'object') return '';
+    const input = Math.max(0, Number(usage.prompt_tokens) || 0);
+    const output = Math.max(0, Number(usage.completion_tokens) || 0);
+    const total = Math.max(0, Number(usage.total_tokens) || (input + output));
+    if (!total && !input && !output) return '';
+    const cached = Math.max(0, Number(usage.prompt_cache_hit_tokens) || 0);
+    const calls = Math.max(1, Number(usage.calls) || 1);
+    const fmt = (n) => n.toLocaleString();
+    const parts = [
+        t('msg_usage_total') + ' ' + fmt(total),
+        t('msg_usage_in') + ' ' + fmt(input),
+        t('msg_usage_out') + ' ' + fmt(output),
+    ];
+    if (cached && input) parts.push(t('msg_usage_cached') + ' ' + Math.round(cached * 100 / input) + '%');
+    if (calls > 1) parts.push(t('msg_usage_calls').replace('{n}', calls));
+    return '<span class="message-usage text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer"' +
+        ' data-message-usage="1" data-tip-float data-tooltip="' + escapeHtml(parts.join(' · ')) + '">' +
+        '<i class="fas fa-coins"></i></span>';
+}
+
+function attachMessageUsage(botEl, usage) {
+    if (!botEl || !usage) return;
+    const footer = botEl.querySelector('.bot-message-meta');
+    if (!footer) return;
+    const old = footer.querySelector('[data-message-usage]');
+    if (old) old.remove();
+    const html = renderMessageUsageHtml(usage);
+    if (!html) return;
+    const regen = footer.querySelector('.regenerate-msg-btn');
+    if (regen) regen.insertAdjacentHTML('beforebegin', html);
+    else footer.insertAdjacentHTML('beforeend', html);
+}
+
 function createBotMessageEl(content, timestamp, requestId, msg, peer) {
     const el = document.createElement('div');
     el.className = 'flex gap-3 px-4 sm:px-6 py-3 bot-message-group';
@@ -487,15 +524,16 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
                 <div class="media-content">${artifactsHtml}</div>
                 <div class="bot-audio-slot"></div>
             </div>
-            <div class="flex items-center gap-2 mt-1.5">
+            <div class="bot-message-meta flex items-center gap-2 mt-1.5 flex-wrap">
                 <span class="text-xs text-slate-400 dark:text-slate-500">${formatTime(timestamp)}</span>
-                <button class="copy-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${currentLang === 'zh' ? '复制' : 'Copy'}">
+                <button class="copy-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" data-tip-float data-tooltip="${currentLang === 'zh' ? '复制' : 'Copy'}">
                     <i class="fas fa-copy"></i>
                 </button>
-                <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
+                <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" data-tip-float data-tooltip="${t('speak_msg')}" style="display:none;">
                     <i class="fas fa-volume-up"></i>
                 </button>
-                ${peer ? '' : `<button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
+                ${renderMessageUsageHtml(msg && msg.usage)}
+                ${peer ? '' : `<button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" data-tip-float data-tooltip="${t('regenerate_response')}">
                     <i class="fas fa-rotate-right"></i>
                 </button>`}
                 <span class="turn-tokens text-xs text-slate-300 dark:text-slate-600" style="display:none;"></span>
@@ -731,6 +769,7 @@ function _triggerManualTts(btn, botEl, text) {
 }
 
 function addUserMessage(content, timestamp, attachments) {
+    cancelChatScrollForNavigation();
     const el = createUserMessageEl(content, timestamp, attachments);
     messagesDiv.appendChild(el);
     _autoScrollEnabled = true;
@@ -740,12 +779,25 @@ function addUserMessage(content, timestamp, attachments) {
 function addBotMessage(content, timestamp, requestId) {
     const el = createBotMessageEl(content, timestamp, requestId);
     messagesDiv.appendChild(el);
-    scrollChatToBottom();
+    refreshChatScrollControls();
+    _updateScrollToBottomBtn();
 }
 
 // Bumped to call off the bottom re-pins of a first load that have not run yet,
 // when the view is sent elsewhere in the conversation (chat/timeline.js).
 let historyPinToken = 0;
+let historyPinSession = '';
+
+function cancelHistoryBottomPins() {
+    historyPinToken++;
+}
+
+function cancelChatScrollForNavigation() {
+    cancelHistoryBottomPins();
+    if (typeof cancelQueuedChatScroll === 'function') cancelQueuedChatScroll();
+    _autoScrollEnabled = false;
+    _updateScrollToBottomBtn();
+}
 
 // Load conversation history from the server (page 1 = most recent messages).
 // Subsequent pages prepend older messages when the user scrolls to the top.
@@ -895,14 +947,15 @@ function loadHistory(page, untilSeq) {
                 );
             }
 
-            // Manage the "load more" sentinel at the very top
+            // Older pages load as the reader nears the top (chat/state.js);
+            // the sentinel only marks that more history exists.
             if (data.has_more) {
                 if (!document.getElementById('history-load-more')) {
-                    const btn = document.createElement('div');
-                    btn.id = 'history-load-more';
-                    btn.className = 'flex justify-center py-3';
-                    btn.innerHTML = `<button class="text-xs text-slate-400 dark:text-slate-500 hover:text-primary-400 transition-colors" onclick="loadHistory(historyPage + 1)">Load earlier messages</button>`;
-                    messagesDiv.insertBefore(btn, messagesDiv.firstChild);
+                    const sentinel = document.createElement('div');
+                    sentinel.id = 'history-load-more';
+                    sentinel.className = 'flex justify-center py-3 text-xs text-slate-400 dark:text-slate-500';
+                    sentinel.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i>';
+                    messagesDiv.insertBefore(sentinel, messagesDiv.firstChild);
                 }
             } else {
                 const sentinel = document.getElementById('history-load-more');
@@ -919,12 +972,13 @@ function loadHistory(page, untilSeq) {
             }
 
             if (isFirstLoad) {
-                // Scroll to the very bottom after the DOM settles. A single
-                // rAF isn't enough: markdown/code-highlight/images keep growing
-                // scrollHeight after the first paint, leaving the last bubble's
-                // timestamp clipped. Re-pin a few times to catch late layout.
+                // Re-pin late media/layout only while the reader has not moved.
                 const pin = ++historyPinToken;
-                const repin = () => { if (pin === historyPinToken) scrollChatToBottom(true); };
+                historyPinSession = historySessionId;
+                const repin = () => {
+                    if (pin === historyPinToken && historyPinSession === sessionId && _autoScrollEnabled) scrollChatToBottom();
+                    else refreshChatScrollControls();
+                };
                 requestAnimationFrame(repin);
                 [120, 350, 700].forEach(d => setTimeout(repin, d));
             } else {
