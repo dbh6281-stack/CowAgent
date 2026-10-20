@@ -1644,6 +1644,9 @@ class ModelsHandler:
         "ernie-4.5-turbo-128k": {"context_window": 128000, "max_output_tokens": 16000},
         "ernie-4.5-turbo-32k": {"context_window": 32000, "max_output_tokens": 16000},
         "ernie-4.5-turbo-vl": {"capabilities": ["text", "vision"], "context_window": 128000, "max_output_tokens": 16000},
+        "MiniMax-M3.1-Flash": {
+            "capabilities": ["text", "vision", "video"], "context_window": 1000000, "max_output_tokens": 524288,
+        },
         "MiniMax-M3": {"capabilities": ["text", "vision", "video"], "context_window": 1000000, "max_output_tokens": 512000},
         "MiniMax-M2.7": {"context_window": 204800, "max_output_tokens": 196608},
         "MiniMax-M2.7-highspeed": {"context_window": 204800, "max_output_tokens": 196608},
