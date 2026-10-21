@@ -211,10 +211,12 @@ class TaskStore:
         with self.lock:
             tasks = self.load_tasks()
             current = tasks.get(task_id)
-            if current is None or any(
+            if current is None:
+                return False
+            if any(
                 current.get(key) != expected.get(key)
-                for key in ("schedule", "next_run_at", "enabled")
-            ):
+                for key in ("schedule", "next_run_at")
+            ) or current.get("enabled", True) != expected.get("enabled", True):
                 return False
             if updates is None:
                 del tasks[task_id]

@@ -141,3 +141,20 @@ def test_postponing_only_next_occurrence_is_preserved(tmp_path, monkeypatch):
     saved = store.get_task("reminder")
     assert saved["next_run_at"] == FUTURE
     assert saved["schedule"] == schedule
+
+
+def test_explicit_default_enabled_does_not_block_completion(tmp_path, monkeypatch):
+    monkeypatch.setattr(scheduler_service, "datetime", FixedDatetime)
+    store = due_store(tmp_path, "interval")
+    tasks = store.load_tasks()
+    tasks["reminder"].pop("enabled")
+    store.save_tasks(tasks)
+
+    def execute(task):
+        store.update_task(task["id"], {"enabled": True, "name": "Updated"})
+
+    SchedulerService(store, execute)._check_and_execute_tasks()
+    assert (
+        store.get_task("reminder")["next_run_at"]
+        == (FIXED + timedelta(seconds=300)).isoformat()
+    )
