@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+pytest.importorskip("docx", reason="Word extraction requires optional python-docx")
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
