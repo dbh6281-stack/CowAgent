@@ -833,8 +833,8 @@ def _live_channel_manager():
 def _serve_allowed_roots() -> list:
     """Roots that /api/file and /preview may read from (symlinks resolved).
 
-    Includes the configured serve root, the Agent workspace, and any project
-    directory a session has opened. Project dirs may live outside the serve
+    Includes the configured serve root, all configured Agent workspaces
+    (including disabled Agents), and any project directory a session has opened. Project dirs may live outside the serve
     root (e.g. ``/tmp/foo``), so previewing files in an opened project would
     otherwise be denied.
     """
