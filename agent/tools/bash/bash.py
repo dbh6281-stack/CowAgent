@@ -226,13 +226,11 @@ SAFETY:
                 env["PYTHONIOENCODING"] = "utf-8"
                 command = self._convert_env_vars_for_windows(command, dotenv_vars)
                 user_command = command
-                # cmd.exe has an ~8191 char command line limit. Long
-                # `python -c "..."` commands silently fail, so spill the inline
-                # code into a temp .py file and run that instead.
-                if len(command) > self._WIN_CMD_SAFE_LEN:
-                    command, temp_script_path = self._rewrite_long_python_c(command)
-                elif "\n" in command or "\r" in command:
-                    command, temp_script_path = self._rewrite_long_python_c(command, standalone=True)
+                # cmd.exe stops at the first line feed and at ~8191 chars, so
+                # multi-line or long `python -c "..."` code is silently cut off.
+                # Spill the inline code into a temp .py file instead.
+                if len(command) > self._WIN_CMD_SAFE_LEN or "\n" in command:
+                    command, temp_script_path = self._rewrite_python_c(command)
                 if command and not command.strip().lower().startswith("chcp"):
                     command = f"chcp 65001 >nul 2>&1 & {command}"
 
@@ -665,59 +663,28 @@ SAFETY:
         return re.sub(r'\$\{(\w+)\}|\$(\w+)', replace_match, command)
 
     @staticmethod
-    def _rewrite_long_python_c(command: str, *, standalone: bool = False):
+    def _rewrite_long_python_c(command: str):
         """
         Rewrite `python -c "<code>"` into `python <tempfile>` to bypass the
-        cmd.exe command line length limit on Windows. Short multiline commands
-        spill through a short -c loader, preserving Python's inline namespace
-        and import path, but only for a standalone Python invocation:
-        cmd.exe otherwise cuts the inline program at its first newline.
+        cmd.exe command line length limit on Windows.
 
         Returns (new_command, temp_file_path). On any parse failure the original
         command and None are returned, so behavior is unchanged when unmatched.
         """
         # Match: <python|python3|py> [flags] -c "<code>" (single or double quoted)
-        if standalone:
-            m = re.fullmatch(
-                r'(?P<prefix>(?P<exe>"[^"\r\n]+"|[^\s"\r\n]+)'
-                r'(?:[ \t]+-[A-Za-z0-9.]+)*[ \t]+-c[ \t]+)'
-                r'(?P<quote>")(?P<code>(?:\\.|[^"\\])*)(?P=quote)'
-                r'(?P<suffix>(?:[ \t]+[^\r\n]*)?)',
-                command,
-                re.DOTALL,
-            )
-            if m:
-                import ntpath
-                executable = ntpath.basename(m.group("exe").strip('"'))
-                if not re.fullmatch(r'(?:python3?|py)(?:\.exe)?', executable, re.IGNORECASE):
-                    return command, None
-                # Preserve compound shell commands rather than moving a
-                # pipeline, redirection or command chain into a Python file.
-                if re.search(r'[&|<>^()]', m.group("suffix")):
-                    return command, None
-        else:
-            m = re.search(
-                r'^(?P<prefix>.*?\b(?:python3?|py)\b[^\n]*?\s-c\s+)'
-                r'(?P<quote>["\'])(?P<code>.*)(?P=quote)\s*(?P<suffix>.*)$',
-                command,
-                re.DOTALL,
-            )
+        m = re.search(
+            r'^(?P<prefix>.*?\b(?:python3?|py)\b[^\n]*?\s-c\s+)'
+            r'(?P<quote>["\'])(?P<code>.*)(?P=quote)\s*(?P<suffix>.*)$',
+            command,
+            re.DOTALL,
+        )
         if not m:
             return command, None
 
         quote = m.group("quote")
         code = m.group("code")
-        if standalone:
-            # Windows CRT: a run of backslashes before a quoted character or
-            # the closing delimiter contributes half as many literal slashes.
-            code = re.sub(
-                r'(\\+)(?="|$)',
-                lambda match: "\\" * (len(match.group(0)) // 2),
-                code,
-            )
-        else:
-            # Preserve the existing long-command compatibility path.
-            code = code.replace("\\" + quote, quote)
+        # Reverse common shell-level escaping of the quote char inside the code.
+        code = code.replace("\\" + quote, quote)
 
         try:
             fd, path = tempfile.mkstemp(suffix=".py", prefix="bash-pyc-")
@@ -730,18 +697,27 @@ SAFETY:
         # Drop the trailing "-c " from the prefix, keep the interpreter + flags.
         interp = re.sub(r'\s-c\s+$', ' ', prefix).rstrip()
         suffix = m.group("suffix").strip()
-        if standalone:
-            # Hex avoids embedding shell-sensitive path characters. Keep -c so
-            # local imports, argv[0] and the absence of __file__ remain intact.
-            path_hex = path.encode("utf-8").hex()
-            loader = (
-                "exec(compile((lambda f:(f.read(),f.close())[0])"
-                f"(open(bytes.fromhex('{path_hex}').decode('utf-8'),"
-                "encoding='utf-8')),'<string>','exec'))"
-            )
-            new_command = f'{interp} -c "{loader}"'
-        else:
-            new_command = f'{interp} "{path}"'
+        new_command = f'{interp} "{path}"'
         if suffix:
             new_command += f' {suffix}'
         return new_command, path
+
+    @staticmethod
+    def _closing_quote(command: str, start: int, quote: str) -> int:
+        """Index of the quote that closes the -c code, or -1.
+
+        Take the first unescaped quote followed by the end of the command or a
+        shell operator, so a trailing `&& echo "done"` stays outside the code.
+        """
+        last = -1
+        index = command.find(quote, start)
+        while index >= 0:
+            backslashes = 0
+            while index - backslashes - 1 >= start and command[index - backslashes - 1] == "\\":
+                backslashes += 1
+            if backslashes % 2 == 0:
+                if re.match(r'\s*(?:$|[&|<>]|\d>)', command[index + 1:]):
+                    return index
+                last = index
+            index = command.find(quote, index + 1)
+        return last
