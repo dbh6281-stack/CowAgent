@@ -6,6 +6,7 @@ supplied by the caller (openpyxl's ``load_workbook``).
 
 from contextlib import contextmanager
 from copy import deepcopy
+from copy import deepcopy
 
 
 def iter_docx_body_text(document):
@@ -24,7 +25,7 @@ def _iter_docx_blocks(container, parent):
 
     for element in container.iterchildren():
         if element.tag == qn("w:p"):
-            yield _docx_paragraph_text(element, parent)
+            yield Paragraph(element, parent).text
         elif element.tag == qn("w:sdt"):
             content = element.find(qn("w:sdtContent"))
             if content is not None:
