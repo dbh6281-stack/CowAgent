@@ -843,6 +843,14 @@ def _serve_allowed_roots() -> list:
         os.path.realpath(os.path.expanduser(serve_root)),
         os.path.realpath(_get_workspace_root()),
     ]
+    # Artifact URLs are global, and the artifact index includes disabled
+    # Agents too. Their explicitly configured workspaces remain readable.
+    try:
+        from agent.registry import get_agent_registry
+        for profile in get_agent_registry().list(include_disabled=True):
+            roots.append(os.path.realpath(profile.workspace))
+    except Exception:
+        pass
     try:
         from agent.workspace import project_store
         for rec in project_store.list_recents():
