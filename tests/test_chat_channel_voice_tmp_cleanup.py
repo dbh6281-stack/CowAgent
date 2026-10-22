@@ -6,12 +6,12 @@ temporary files. Two things leaked:
 
 * On a conversion failure the code reassigned ``wav_path = file_path`` before
   the cleanup ran, so the output the failing encoder had already created was no
-  longer named anywhere and stayed in the tmp dir for good.
+  longer named anywhere and stayed in the tmp dir for good. pydub opens the
+  destination ``wb+`` before it runs ffmpeg, so an encoder that exits nonzero
+  leaves an empty file at that path.
 * The two removals shared one ``try``, so a failure on the first one skipped
-  the second.
-
-These files are the user's own voice recordings, so a leak keeps private audio
-on disk indefinitely.
+  the second. That one strands the converted wav, which does hold the user's
+  own recording.
 """
 import os
 
@@ -56,12 +56,13 @@ def _voice_context(tmp_path, name="wx_123.silk"):
     return Context(ContextType.VOICE, str(src), kwargs={"msg": _FakeMsg()})
 
 
-def test_a_failed_conversion_leaves_no_half_written_recording(channel, monkeypatch, tmp_path):
+def test_a_failed_conversion_leaves_no_orphaned_output(channel, monkeypatch, tmp_path):
     def failing_any_to_wav(any_path, wav_path):
-        # pydub opens the destination before handing the encode to ffmpeg, so a
-        # failure here leaves a partial file behind.
-        with open(wav_path, "wb") as f:
-            f.write(b"PARTIAL")
+        # pydub opens the destination wb+ before it runs ffmpeg, so an encoder
+        # that exits nonzero leaves the (empty) file behind. Stubbed here
+        # because pydub is an optional dependency and is absent in CI.
+        with open(wav_path, "wb"):
+            pass
         raise RuntimeError("ffmpeg: Encoder not found")
 
     monkeypatch.setattr(mod, "any_to_wav", failing_any_to_wav)

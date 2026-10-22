@@ -242,10 +242,11 @@ class ChatChannel(Channel):
                     any_to_wav(file_path, wav_path)
                 except Exception as e:  # 转换失败，直接使用mp3，对于某些api，mp3也可以识别
                     logger.warning("[chat_channel]any to wav error, use raw path. " + str(e))
-                    # Keep wav_path pointing at the file the conversion may have
-                    # created: a failing encoder opens the output before it
-                    # fails, and reassigning the name here orphaned that
-                    # half-written recording in the tmp dir for good.
+                    # Keep wav_path pointing at the file the conversion may
+                    # have created: pydub opens the destination wb+ before it
+                    # runs ffmpeg, so an encoder that exits nonzero leaves a
+                    # file there, and reassigning the name here orphaned it in
+                    # the tmp dir for good.
                     stt_path = file_path
                 else:
                     stt_path = wav_path
