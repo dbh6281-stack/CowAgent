@@ -990,7 +990,7 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                 logger.info(f"[DingTalk] Sending file: {reply.content}")
                 media_id = self.upload_media(reply.content, media_type="file")
                 if media_id:
-                    file_name = os.path.basename(file_path)
+                    file_name = getattr(reply, "file_name", "") or os.path.basename(file_path)
                     file_base, file_extension = os.path.splitext(file_name)
                     msg_param = {
                         "mediaId": media_id,

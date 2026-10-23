@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 import web
@@ -59,6 +60,7 @@ KF_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin/kf"
 SYNC_MSG_LIMIT = 1000
 _MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
 _MAX_REMOTE_VIDEO_BYTES = 10 * 1024 * 1024
+_MAX_REMOTE_FILE_BYTES = 20 * 1024 * 1024
 _MAX_REMOTE_MEDIA_SECONDS = 60
 
 @singleton
@@ -282,10 +284,19 @@ class WechatKfChannel(ChatChannel):
                 self._send_text(external_userid, open_kfid, text_content)
                 time.sleep(0.3)
             local_path = file_path[7:] if file_path.startswith("file://") else file_path
+            is_remote = local_path.startswith(("http://", "https://"))
+            name = getattr(reply, "file_name", "") or os.path.basename(
+                urlparse(local_path).path if is_remote else local_path) or "file"
             try:
-                with open(local_path, "rb") as f:
-                    data = f.read()
-                response = self.client.media.upload("file", (os.path.basename(local_path), data))
+                if is_remote:
+                    storage = self._read_media(local_path, _MAX_REMOTE_FILE_BYTES)
+                    if storage is None:
+                        return
+                    data = storage.getvalue()
+                else:
+                    with open(local_path, "rb") as f:
+                        data = f.read()
+                response = self.client.media.upload("file", (name, data))
             except (OSError, WeChatClientException) as e:
                 logger.error("[wechat_kf] upload file failed: {}".format(e))
                 return

@@ -981,7 +981,8 @@ class FeiShuChanel(ChatChannel):
                 content_key = None  # 直接序列化整个对象
             else:
                 # 其他文件使用 file 类型
-                file_key = self._upload_file_url(reply.content, access_token)
+                file_key = self._upload_file_url(reply.content, access_token,
+                                                 getattr(reply, "file_name", ""))
                 if not file_key:
                     logger.warning("[FeiShu] upload file failed")
                     return
@@ -2136,10 +2137,11 @@ class FeiShuChanel(ChatChannel):
                 except Exception as e:
                     logger.warning(f"[FeiShu] Failed to remove temp opus file {upload_path}: {e}")
 
-    def _upload_file_url(self, file_url, access_token):
+    def _upload_file_url(self, file_url, access_token, file_name=""):
         """
         Upload file to Feishu
-        Supports both local files (file://) and HTTP URLs
+        Supports both local files (file://) and HTTP URLs.
+        ``file_name`` is the name shown to the user; defaults to the path's name.
         """
         logger.debug(f"[FeiShu] start process file, file_url={file_url}")
 
@@ -2153,7 +2155,7 @@ class FeiShuChanel(ChatChannel):
                 return None
 
             # Get file info
-            file_name = os.path.basename(local_path)
+            file_name = file_name or os.path.basename(local_path)
             file_ext = os.path.splitext(file_name)[1].lower()
 
             # Determine file type for Feishu API
@@ -2204,7 +2206,7 @@ class FeiShuChanel(ChatChannel):
 
             # Take the name off the URL path: a query string would otherwise end
             # up in the suffix and drop file_type to 'stream'.
-            file_name = os.path.basename(urlparse(file_url).path) or "file"
+            file_name = file_name or os.path.basename(urlparse(file_url).path) or "file"
             file_ext = os.path.splitext(file_name)[1].lower()
             file_type_map = {
                 '.opus': 'opus', '.mp4': 'mp4', '.pdf': 'pdf',

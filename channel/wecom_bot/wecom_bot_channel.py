@@ -1059,7 +1059,8 @@ class WecomBotChannel(ChatChannel):
                 if hasattr(reply, "text_content") and reply.text_content:
                     self._send_text(reply.text_content, receiver, is_group, req_id)
                     time.sleep(0.3)
-                self._send_file(reply.content, receiver, is_group, req_id)
+                self._send_file(reply.content, receiver, is_group, req_id,
+                                file_name=getattr(reply, "file_name", ""))
             elif reply.type == ReplyType.VIDEO or reply.type == ReplyType.VIDEO_URL:
                 self._send_file(reply.content, receiver, is_group, req_id, media_type="video")
             elif reply.type == ReplyType.VOICE:
@@ -1271,7 +1272,7 @@ class WecomBotChannel(ChatChannel):
             return ""
 
     def _send_file(self, file_path: str, receiver: str, is_group: bool,
-                   req_id: str = None, media_type: str = "file"):
+                   req_id: str = None, media_type: str = "file", file_name: str = ""):
         """Send file/video reply by uploading media first."""
         local_path = file_path
         if local_path.startswith("file://"):
@@ -1296,14 +1297,14 @@ class WecomBotChannel(ChatChannel):
                 logger.error(f"[WecomBot] File not found: {local_path}")
                 return
 
-            self._upload_and_reply_file(local_path, receiver, is_group, req_id, media_type)
+            self._upload_and_reply_file(local_path, receiver, is_group, req_id, media_type, file_name)
         finally:
             remove_download(downloaded)
 
     def _upload_and_reply_file(self, local_path, receiver, is_group, req_id=None,
-                               media_type: str = "file"):
+                               media_type: str = "file", file_name: str = ""):
         """Upload one prepared file and send it."""
-        media_id = self._upload_media(local_path, media_type)
+        media_id = self._upload_media(local_path, media_type, file_name)
         if not media_id:
             logger.error(f"[WecomBot] Failed to upload {media_type}")
             return
@@ -1416,9 +1417,10 @@ class WecomBotChannel(ChatChannel):
     # Media upload (chunked)
     # ------------------------------------------------------------------
 
-    def _upload_media(self, file_path: str, media_type: str = "file") -> str:
+    def _upload_media(self, file_path: str, media_type: str = "file", file_name: str = "") -> str:
         """
         Upload a local file to wecom bot via chunked upload protocol.
+        ``file_name`` is the name shown to the user; defaults to the path's name.
         Returns media_id on success, empty string on failure.
         """
         if not os.path.exists(file_path):
@@ -1430,7 +1432,7 @@ class WecomBotChannel(ChatChannel):
             logger.error(f"[WecomBot] File too small: {file_size} bytes")
             return ""
 
-        filename = os.path.basename(file_path)
+        filename = file_name or os.path.basename(file_path)
         total_chunks = math.ceil(file_size / MEDIA_CHUNK_SIZE)
         if total_chunks > 100:
             logger.error(f"[WecomBot] Too many chunks: {total_chunks} > 100")
