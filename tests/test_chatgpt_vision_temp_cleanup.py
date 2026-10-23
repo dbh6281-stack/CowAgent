@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import models.chatgpt.chat_gpt_bot as chatgpt_module
 
 
