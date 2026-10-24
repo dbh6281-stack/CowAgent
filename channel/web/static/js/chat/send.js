@@ -689,8 +689,9 @@ function startSSE(requestId, loadingEl, timestamp, replayItems, resume) {
             } else if (item.type === 'image') {
                 ensureBotEl();
                 const imgEl = document.createElement('img');
+                imgEl.onerror = () => _onImageLoadError(imgEl);
                 imgEl.src = item.content;
-                imgEl.alt = 'screenshot';
+                imgEl.alt = item.file_name || 'image';
                 imgEl.style.cssText = 'max-width:600px;border-radius:8px;margin:8px 0;cursor:zoom-in;box-shadow:0 1px 4px rgba(0,0,0,0.1);';
                 imgEl.onclick = () => _openImageLightbox(imgEl.src);
                 mediaEl.appendChild(imgEl);
