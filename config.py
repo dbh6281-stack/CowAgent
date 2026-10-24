@@ -500,6 +500,53 @@ def _quarantine_corrupted_config(config_path):
         logger.warning("[INIT] failed to back up corrupted config: {}".format(e))
 
 
+# Config keys mirrored into environment variables at startup so that
+# subprocesses (e.g. shell skill scripts) can read them directly.
+CONFIG_TO_ENV = {
+    "open_ai_api_key": "OPENAI_API_KEY",
+    "open_ai_api_base": "OPENAI_API_BASE",
+    "linkai_api_key": "LINKAI_API_KEY",
+    "linkai_api_base": "LINKAI_API_BASE",
+    "claude_api_key": "CLAUDE_API_KEY",
+    "claude_api_base": "CLAUDE_API_BASE",
+    "gemini_api_key": "GEMINI_API_KEY",
+    "gemini_api_base": "GEMINI_API_BASE",
+    "minimax_api_key": "MINIMAX_API_KEY",
+    "minimax_api_base": "MINIMAX_API_BASE",
+    "deepseek_api_key": "DEEPSEEK_API_KEY",
+    "deepseek_api_base": "DEEPSEEK_API_BASE",
+    "mimo_api_key": "MIMO_API_KEY",
+    "mimo_api_base": "MIMO_API_BASE",
+    "qianfan_api_key": "QIANFAN_API_KEY",
+    "qianfan_api_base": "QIANFAN_API_BASE",
+    "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
+    "zhipu_ai_api_base": "ZHIPU_AI_API_BASE",
+    "moonshot_api_key": "MOONSHOT_API_KEY",
+    "moonshot_api_base": "MOONSHOT_API_BASE",
+    "ark_api_key": "ARK_API_KEY",
+    "ark_api_base": "ARK_API_BASE",
+    "dashscope_api_key": "DASHSCOPE_API_KEY",
+    "dashscope_api_base": "DASHSCOPE_API_BASE",
+    # Channel credentials (used by skills that check env vars)
+    "feishu_app_id": "FEISHU_APP_ID",
+    "feishu_app_secret": "FEISHU_APP_SECRET",
+    "dingtalk_client_id": "DINGTALK_CLIENT_ID",
+    "dingtalk_client_secret": "DINGTALK_CLIENT_SECRET",
+    "wechatmp_app_id": "WECHATMP_APP_ID",
+    "wechatmp_app_secret": "WECHATMP_APP_SECRET",
+    "wechatcomapp_agent_id": "WECHATCOMAPP_AGENT_ID",
+    "wechatcomapp_secret": "WECHATCOMAPP_SECRET",
+    "wechatcom_corp_id": "WECHATCOM_CORP_ID",
+    "wechat_kf_corp_id": "WECHAT_KF_CORP_ID",
+    "wechat_kf_secret": "WECHAT_KF_SECRET",
+    "wechat_kf_token": "WECHAT_KF_TOKEN",
+    "wechat_kf_aes_key": "WECHAT_KF_AES_KEY",
+    "qq_app_id": "QQ_APP_ID",
+    "qq_app_secret": "QQ_APP_SECRET",
+    "weixin_token": "WEIXIN_TOKEN",
+}
+
+
 def load_config():
     global config
 
@@ -665,51 +712,8 @@ def load_config():
     # Sync selected config values to environment variables so that
     # subprocesses (e.g. shell skill scripts) can access them directly.
     # Existing env vars are NOT overwritten (env takes precedence).
-    _CONFIG_TO_ENV = {
-        "open_ai_api_key": "OPENAI_API_KEY",
-        "open_ai_api_base": "OPENAI_API_BASE",
-        "linkai_api_key": "LINKAI_API_KEY",
-        "linkai_api_base": "LINKAI_API_BASE",
-        "claude_api_key": "CLAUDE_API_KEY",
-        "claude_api_base": "CLAUDE_API_BASE",
-        "gemini_api_key": "GEMINI_API_KEY",
-        "gemini_api_base": "GEMINI_API_BASE",
-        "minimax_api_key": "MINIMAX_API_KEY",
-        "minimax_api_base": "MINIMAX_API_BASE",
-        "deepseek_api_key": "DEEPSEEK_API_KEY",
-        "deepseek_api_base": "DEEPSEEK_API_BASE",
-        "mimo_api_key": "MIMO_API_KEY",
-        "mimo_api_base": "MIMO_API_BASE",
-        "qianfan_api_key": "QIANFAN_API_KEY",
-        "qianfan_api_base": "QIANFAN_API_BASE",
-        "zhipu_ai_api_key": "ZHIPU_AI_API_KEY",
-        "zhipu_ai_api_base": "ZHIPU_AI_API_BASE",
-        "moonshot_api_key": "MOONSHOT_API_KEY",
-        "moonshot_api_base": "MOONSHOT_API_BASE",
-        "ark_api_key": "ARK_API_KEY",
-        "ark_api_base": "ARK_API_BASE",
-        "dashscope_api_key": "DASHSCOPE_API_KEY",
-        "dashscope_api_base": "DASHSCOPE_API_BASE",
-        # Channel credentials (used by skills that check env vars)
-        "feishu_app_id": "FEISHU_APP_ID",
-        "feishu_app_secret": "FEISHU_APP_SECRET",
-        "dingtalk_client_id": "DINGTALK_CLIENT_ID",
-        "dingtalk_client_secret": "DINGTALK_CLIENT_SECRET",
-        "wechatmp_app_id": "WECHATMP_APP_ID",
-        "wechatmp_app_secret": "WECHATMP_APP_SECRET",
-        "wechatcomapp_agent_id": "WECHATCOMAPP_AGENT_ID",
-        "wechatcomapp_secret": "WECHATCOMAPP_SECRET",
-        "wechatcom_corp_id": "WECHATCOM_CORP_ID",
-        "wechat_kf_corp_id": "WECHAT_KF_CORP_ID",
-        "wechat_kf_secret": "WECHAT_KF_SECRET",
-        "wechat_kf_token": "WECHAT_KF_TOKEN",
-        "wechat_kf_aes_key": "WECHAT_KF_AES_KEY",
-        "qq_app_id": "QQ_APP_ID",
-        "qq_app_secret": "QQ_APP_SECRET",
-        "weixin_token": "WEIXIN_TOKEN",
-    }
     injected = 0
-    for conf_key, env_key in _CONFIG_TO_ENV.items():
+    for conf_key, env_key in CONFIG_TO_ENV.items():
         if not os.environ.get(env_key):
             val = config.get(conf_key, "")
             if val:

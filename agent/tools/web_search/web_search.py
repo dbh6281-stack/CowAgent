@@ -20,6 +20,9 @@ Provider selection
     to the auto order.
   - strategy 'fixed': use the configured provider; if its credential is
     missing at call time, silently fall back to auto order (no card hint).
+  - tools.web_search.disabled_providers: providers excluded from search even
+    though their credential is present (e.g. a model vendor key that should
+    only serve chat).
 
 Credentials
   - bocha   : tools.web_search.bocha_api_key  ->  env BOCHA_API_KEY
@@ -159,13 +162,31 @@ def _get_searxng_url() -> str:
     return url or os.environ.get("SEARXNG_URL", "").strip()
 
 
+def parse_provider_list(raw) -> List[str]:
+    """Normalize a provider list config value (list, or comma-separated string)."""
+    if isinstance(raw, str):
+        raw = raw.split(",")
+    if not isinstance(raw, list):
+        return []
+    return [p.strip().lower() for p in raw if isinstance(p, str) and p.strip()]
+
+
+def disabled_providers() -> List[str]:
+    """Providers the user switched off for search while keeping their credential."""
+    return parse_provider_list(_tools_web_search_conf().get("disabled_providers"))
+
+
 def configured_providers() -> List[str]:
     """Configured providers in canonical order. anysearch and keenable qualify
     with a real key OR an explicit anonymous opt-in (still last in fallback
     order); nothing goes keyless unless the user turned it on. searxng
-    qualifies when an instance URL is configured."""
+    qualifies when an instance URL is configured. Providers listed in
+    tools.web_search.disabled_providers are skipped."""
+    disabled = set(disabled_providers())
     result = []
     for p in PROVIDER_ORDER:
+        if p in disabled:
+            continue
         if _get_api_key(p):
             result.append(p)
         elif p == "anysearch" and _anysearch_anonymous_enabled():

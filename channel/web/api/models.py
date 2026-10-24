@@ -30,6 +30,7 @@ from channel.web.core.providers import (
 from common import const
 from common.log import logger
 from config import (
+    CONFIG_TO_ENV,
     conf,
     get_data_root,
     sync_image_generation_custom_provider_env,
@@ -1495,8 +1496,9 @@ class ModelsHandler:
         if not isinstance(ws_cfg, dict):
             ws_cfg = {}
 
-        from agent.tools.web_search.web_search import anonymous_opt_in
+        from agent.tools.web_search.web_search import anonymous_opt_in, parse_provider_list
 
+        disabled = set(parse_provider_list(ws_cfg.get("disabled_providers")))
         anonymous_on = anonymous_opt_in(ws_cfg.get("anysearch_anonymous"))
         keenable_anonymous_on = anonymous_opt_in(ws_cfg.get("keenable_anonymous"))
         searxng_url = (ws_cfg.get("searxng_url") or "").strip() if isinstance(ws_cfg, dict) else ""
@@ -1515,10 +1517,14 @@ class ModelsHandler:
                 ok = bool(searxng_url)
             else:
                 ok = is_real_key(raw_key)
+            is_disabled = ok and pid in disabled
             providers.append({
                 "id": pid,
                 "label": cls._SEARCH_PROVIDER_LABELS.get(pid, pid),
-                "configured": ok,
+                # configured = usable for search; disabled = credential kept
+                # but switched off by the user.
+                "configured": ok and not is_disabled,
+                "disabled": is_disabled,
                 # bocha owns its key under tools.web_search; zhipu/qianfan/
                 # linkai/deepseek piggy-back on a model-vendor credential.
                 # Frontend uses this hint to decide which credential editor
@@ -1537,7 +1543,7 @@ class ModelsHandler:
                 ) if pid == "deepseek" else "",
                 "api_key_masked": mask_key(raw_key) if raw_key else "",
             })
-            if ok:
+            if ok and not is_disabled:
                 configured_ids.append(pid)
 
         strategy = (ws_cfg.get("strategy") or "auto").strip().lower()
@@ -1798,6 +1804,8 @@ class ModelsHandler:
                 return self._handle_set_voice_reply_mode(data)
             if action == "set_search_credential":
                 return self._handle_set_search_credential(data)
+            if action == "set_search_provider_enabled":
+                return self._handle_set_search_provider_enabled(data)
             return json.dumps({"status": "error", "message": f"unknown action: {action!r}"})
         except Exception as e:
             logger.error(f"[ModelsHandler] POST failed: {e}")
@@ -1938,9 +1946,15 @@ class ModelsHandler:
             # in-memory conf() reflects the cleared state without needing a
             # restart. (`in local_config` was too strict: provider keys that
             # were ever set then deleted manually wouldn't get reset.)
+            previous = local_config.get(field_name)
             local_config[field_name] = ""
             file_cfg[field_name] = ""
             cleared.append(field_name)
+            # Startup mirrors these keys into os.environ, and readers fall
+            # back to env when config is empty, so drop the mirrored copy too.
+            env_key = CONFIG_TO_ENV.get(field_name)
+            if env_key and previous and os.environ.get(env_key) == previous:
+                os.environ.pop(env_key, None)
 
         self._write_file_config(file_cfg)
         logger.info(f"[ModelsHandler] provider {provider_id} cleared: {cleared}")
@@ -2703,6 +2717,8 @@ class ModelsHandler:
 
             self._set_nested_namespace_value(local_config, "tools", "web_search", anonymous_field, anonymous_on)
             self._set_nested_namespace_value(file_cfg, "tools", "web_search", anonymous_field, anonymous_on)
+            if api_key or anonymous_on:
+                self._set_search_provider_disabled(local_config, file_cfg, provider, False)
 
             self._write_file_config(file_cfg)
             logger.info(
@@ -2715,6 +2731,8 @@ class ModelsHandler:
             file_cfg = self._read_file_config()
             self._set_nested_namespace_value(local_config, "tools", "web_search", "searxng_url", instance_url)
             self._set_nested_namespace_value(file_cfg, "tools", "web_search", "searxng_url", instance_url)
+            if instance_url:
+                self._set_search_provider_disabled(local_config, file_cfg, provider, False)
             self._write_file_config(file_cfg)
             logger.info(f"[ModelsHandler] search credential set: searxng_url={'***' if instance_url else ''}")
             return json.dumps({"status": "success", "provider": provider})
@@ -2725,9 +2743,44 @@ class ModelsHandler:
             file_cfg = self._read_file_config()
             self._set_nested_namespace_value(local_config, "tools", "web_search", key_field, api_key)
             self._set_nested_namespace_value(file_cfg, "tools", "web_search", key_field, api_key)
+            if api_key:
+                self._set_search_provider_disabled(local_config, file_cfg, provider, False)
             self._write_file_config(file_cfg)
             logger.info(f"[ModelsHandler] search credential set: {key_field}={'***' if api_key else ''}")
             return json.dumps({"status": "success", "provider": provider})
+
+    def _handle_set_search_provider_enabled(self, data: dict) -> str:
+        """Switch a search provider on/off without touching its credential.
+        Model-vendor keys (deepseek/zhipu/qianfan/linkai) stay usable for chat."""
+        provider = (data.get("provider") or "").strip().lower()
+        if provider not in self._SEARCH_PROVIDERS:
+            return json.dumps({"status": "error", "message": f"unknown search provider: {provider!r}"})
+        enabled = data.get("enabled")
+        if not isinstance(enabled, bool):
+            return json.dumps({"status": "error", "message": "enabled must be a boolean"})
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        self._set_search_provider_disabled(local_config, file_cfg, provider, not enabled)
+        self._write_file_config(file_cfg)
+        logger.info(f"[ModelsHandler] search provider {provider} enabled={enabled}")
+        return json.dumps({"status": "success", "provider": provider, "enabled": enabled})
+
+    def _set_search_provider_disabled(self, local_config, file_cfg, provider: str, disabled: bool) -> None:
+        """Add/remove ``provider`` in tools.web_search.disabled_providers."""
+        from agent.tools.web_search.web_search import parse_provider_list
+
+        for cfg in (local_config, file_cfg):
+            tools_cfg = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}
+            ws_cfg = tools_cfg.get("web_search") if isinstance(tools_cfg.get("web_search"), dict) else {}
+            current = parse_provider_list(ws_cfg.get("disabled_providers"))
+            if disabled and provider not in current:
+                current.append(provider)
+            elif not disabled and provider in current:
+                current = [p for p in current if p != provider]
+            elif "disabled_providers" not in ws_cfg:
+                continue
+            self._set_nested_namespace_value(cfg, "tools", "web_search", "disabled_providers", current)
 
     @staticmethod
     def _reset_bridge() -> None:

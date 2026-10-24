@@ -735,8 +735,10 @@ function _renderSearchSummary(body, cap) {
     if (!host) return;
     const providers = cap.providers || [];
     const configured = providers.filter(p => p.configured);
+    // Disabled = credential kept but switched off for search; shown greyed out.
+    const disabled = providers.filter(p => p.disabled);
 
-    const missing = providers.filter(p => !p.configured);
+    const missing = providers.filter(p => !p.configured && !p.disabled);
 
     const addBtn = missing.length
         ? `<button type="button" id="cap-search-add-btn"
@@ -747,7 +749,7 @@ function _renderSearchSummary(body, cap) {
            </button>`
         : '';
 
-    if (configured.length === 0) {
+    if (configured.length === 0 && disabled.length === 0) {
         host.innerHTML = `
             <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <i class="fas fa-circle-info text-[10px] text-amber-500"></i>
@@ -757,18 +759,36 @@ function _renderSearchSummary(body, cap) {
         `;
     } else {
         const chips = configured.map(p => `
-            <button type="button" data-search-edit-provider="${p.id}"
-                    title="${t('models_search_edit_hint')}"
+            <span class="inline-flex items-center rounded-md text-[11px]
+                         bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400">
+                <button type="button" data-search-edit-provider="${p.id}"
+                        title="${t('models_search_edit_hint')}"
+                        class="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-l-md cursor-pointer
+                               hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
+                    <i class="fas fa-check text-[10px]"></i>${escapeHtml(localizedLabel(p.label))}${p.anonymous ? ` · ${t('models_search_anonymous_badge')}` : ''}
+                </button>
+                <button type="button" data-search-disable-provider="${p.id}"
+                        title="${t('models_search_disable_hint')}"
+                        class="px-1.5 py-0.5 rounded-r-md cursor-pointer opacity-60 hover:opacity-100
+                               hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
+                    <i class="fas fa-xmark text-[10px]"></i>
+                </button>
+            </span>
+        `).join('');
+        const disabledChips = disabled.map(p => `
+            <button type="button" data-search-enable-provider="${p.id}"
+                    title="${t('models_search_enable_hint')}"
                     class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-md cursor-pointer
-                           bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400
-                           hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors">
-                <i class="fas fa-check text-[10px]"></i>${escapeHtml(localizedLabel(p.label))}${p.anonymous ? ` · ${t('models_search_anonymous_badge')}` : ''}
+                           bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500
+                           hover:bg-slate-200 dark:hover:bg-white/10 transition-colors">
+                ${escapeHtml(localizedLabel(p.label))}
             </button>
         `).join('');
         host.innerHTML = `
             <div class="flex items-center flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <span>${t('models_search_available_label')}</span>
                 ${chips}
+                ${disabledChips}
                 ${addBtn}
             </div>
         `;
@@ -789,6 +809,34 @@ function _renderSearchSummary(body, cap) {
             _launchSearchProviderConfig(pid, meta);
         });
     });
+    host.querySelectorAll('[data-search-disable-provider]').forEach(el => {
+        el.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            _setSearchProviderEnabled(el.getAttribute('data-search-disable-provider'), false);
+        });
+    });
+    host.querySelectorAll('[data-search-enable-provider]').forEach(el => {
+        el.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            _setSearchProviderEnabled(el.getAttribute('data-search-enable-provider'), true);
+        });
+    });
+}
+
+// Toggle a provider in/out of search without touching its credential.
+function _setSearchProviderEnabled(providerId, enabled) {
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_search_provider_enabled', provider: providerId, enabled }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            loadModelsView({ preserveScroll: true });
+        } else {
+            console.log('[setSearchProviderEnabled] Error:', data.message);
+            showStatus('cap-search-status', 'models_save_failed', true);
+        }
+    }).catch(() => showStatus('cap-search-status', 'models_save_failed', true));
 }
 
 // Two-step add flow: click "+ 添加厂商" -> chooser dialog -> per-provider
