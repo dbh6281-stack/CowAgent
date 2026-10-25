@@ -189,8 +189,10 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.VOICE:
             file_path = reply.content
+            owned = [file_path]
             try:
                 amr_file = os.path.splitext(file_path)[0] + ".amr"
+                owned.append(amr_file)
                 any_to_amr(file_path, amr_file)
                 duration, files = split_audio(amr_file, 60 * 1000)
                 if len(files) > 1:
@@ -199,6 +201,7 @@ class WechatKfChannel(ChatChannel):
                             duration / 1000.0, len(files)
                         )
                     )
+                owned += files
                 media_ids = []
                 for path in files:
                     with open(path, "rb") as f:
@@ -212,12 +215,12 @@ class WechatKfChannel(ChatChannel):
             except WeChatClientException as e:
                 logger.error("[wechat_kf] upload voice failed: {}".format(e))
                 return
-
-            for path in {file_path, amr_file, *files}:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+            finally:
+                for path in owned:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
 
             for media_id in media_ids:
                 self._send_voice(external_userid, open_kfid, media_id)
