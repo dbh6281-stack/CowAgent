@@ -1013,6 +1013,8 @@ class WeixinQrHandler:
             new_resp = api.fetch_qr_code()
             new_qrcode = new_resp.get("qrcode", "")
             new_qrcode_url = new_resp.get("qrcode_img_content", "")
+            if not new_qrcode:
+                return json.dumps({"status": "error", "message": "No QR code returned"})
             new_qr_image = self._qr_to_data_uri(new_qrcode_url)
             WeixinQrHandler._qr_state["qrcode"] = new_qrcode
             WeixinQrHandler._qr_state["qrcode_url"] = new_qrcode_url
