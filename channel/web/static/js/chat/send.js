@@ -486,6 +486,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems, resum
                 markHandoffCard(toolElements.get(item.card_id), item);
 
             } else if (item.type === 'peer_end') {
+                if (item.usage) {
+                    ensureBotEl();
+                    attachMessageUsage(botEl, item.usage);
+                    renderTurnUsageBadge(botEl, item.usage);
+                }
                 closeBubble();
                 speakerStack.pop();
 

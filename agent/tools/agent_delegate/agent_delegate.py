@@ -114,12 +114,18 @@ class _DelegateView:
         self.target_id = target_id
         self.target_name = target_name or target_id
         self._open = False
+        self.usage = None
 
     def relay(self, event: dict) -> None:
         if not isinstance(event, dict):
             return
         event_type = event.get("type")
         data = event.get("data") or {}
+        if event_type == "agent_end":
+            self.usage = data.get("usage")
+            if self.usage:
+                self.tool.emit_event("delegated_usage", {"usage": self.usage})
+            return
         # A teammate handing work onward is still just another turn: pass its
         # markers up untouched so the chain reads as a flat sequence of turns
         # rather than turns nested inside turns.
@@ -154,7 +160,8 @@ class _DelegateView:
         self._open = False
         self.tool.emit_event(
             self.END,
-            {"card_id": self.card_id, "agent_id": self.target_id, "status": status},
+            {"card_id": self.card_id, "agent_id": self.target_id, "status": status,
+             "usage": self.usage},
         )
 
 

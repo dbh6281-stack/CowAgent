@@ -157,6 +157,9 @@ export interface MessageStep {
   display?: string
   /** Work done inside this step, for a tool that drives sub agents. */
   substeps?: SubStep[]
+  /** Persisted steps of this exact delegated run, hydrated for history only. */
+  delegation_steps?: MessageStep[]
+  delegation_usage?: MessageUsage
   /** Set when the tool was refused by the session's permission mode, so the UI
    * can render an actionable "adjust permissions" hint rather than a plain error. */
   permission_denied?: boolean

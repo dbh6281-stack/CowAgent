@@ -174,6 +174,48 @@ def _add_delegate_displays(steps) -> None:
         )
 
 
+def _add_delegate_histories(steps, root_session_id: str, depth: int = 0) -> None:
+    """Attach UI-only traces without inflating the tool result sent to the LLM."""
+    if depth >= 8:
+        return
+    from agent.memory import get_conversation_store
+    from agent.registry import get_agent_registry
+    from agent.tools.agent_delegate.agent_delegate import AgentDelegateTool
+
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("name") != "agent_delegate":
+            continue
+        try:
+            payload = json.loads(step.get("result") or "{}")
+            if not isinstance(payload, dict):
+                continue
+            source, target = payload.get("delegated_by"), payload.get("agent_id")
+            session_id, run_id = payload.get("session_id"), payload.get("run_id")
+            if not all(isinstance(v, str) and v for v in (source, target, session_id, run_id)):
+                continue  # Remote/legacy results may not have a local trace.
+            if session_id != AgentDelegateTool._session_id(source, target, root_session_id):
+                continue
+            profile = get_agent_registry().get(target, require_enabled=False)
+            store = get_conversation_store(profile.workspace)
+            child_steps = store.load_run_steps(session_id, run_id)
+            if not child_steps:
+                continue
+            _add_subagent_displays(child_steps)
+            _add_delegate_displays(child_steps)
+            _add_delegate_histories(child_steps, root_session_id, depth + 1)
+            step["delegation_steps"] = child_steps
+            from agent.protocol.usage import own_usage, team_usage
+            get_usage = getattr(store, 'load_run_usage', None)
+            snapshot = get_usage(session_id, run_id) if get_usage else None
+            children = [s.get('delegation_total_usage') for s in child_steps]
+            # Keep inclusive totals only to interpret older stored snapshots.
+            step['delegation_total_usage'] = team_usage(snapshot, children)
+            step['delegation_usage'] = own_usage(snapshot, children)
+        except Exception as exc:
+            # Deleted/remote teammates must not break the rest of the history.
+            logger.debug(f"[WebChannel] delegated history unavailable: {exc}")
+
+
 def _generate_session_title(user_message: str, assistant_reply: str = "",
                             session_id: str = "") -> str:
     """Delegate to the shared SessionService implementation."""
@@ -1066,6 +1108,11 @@ class HistoryHandler:
                         logger.debug(f"[WebChannel] history media rewrite skipped: {e}")
                 _add_subagent_displays(msg.get("steps"))
                 _add_delegate_displays(msg.get("steps"))
+                _add_delegate_histories(msg.get("steps"), session_id)
+                from agent.protocol.usage import own_usage
+                msg['usage'] = own_usage(msg.get('usage'), [
+                    s.get('delegation_total_usage') for s in msg.get('steps', [])
+                ])
                 artifacts = _artifacts_from_steps(msg.get("steps"), session_id, agent_id)
                 if artifacts:
                     msg["artifacts"] = artifacts

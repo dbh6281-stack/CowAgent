@@ -110,7 +110,8 @@ class StepWriter:
         usage = getattr(self._executor, "run_usage", None)
         last = messages[-1]
         if usage and last.get("role") == "assistant" and not _has_tool_use(last):
-            messages[-1] = {**last, "extras": {**(last.get("extras") or {}), "usage": dict(usage)}}
+            messages[-1] = {**last, "extras": {**(last.get("extras") or {}),
+                                              "usage": {**usage, "scope": "own"}}}
         return messages
 
     def _mark(self, message: Dict) -> None:

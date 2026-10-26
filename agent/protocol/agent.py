@@ -838,6 +838,14 @@ class Agent:
         # included), independent of last_usage which only tracks the final call.
         self.run_usage_total = None
 
+        # Drop the previous turn's snapshot too. If every call of THIS run
+        # fails to report usage, consumers fall back to last_usage (the web
+        # channel's turn badge, the [Usage] reconciliation log); without this
+        # reset that fallback would present the PREVIOUS question's tokens as
+        # this turn's cost, and the staleness fingerprint would not help
+        # because it is only checked by the context-usage indicator.
+        self.last_usage = None
+
         # Get model to use
         if not self.model:
             raise ValueError("No model available for agent")

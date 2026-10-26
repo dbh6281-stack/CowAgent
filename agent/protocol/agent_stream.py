@@ -123,6 +123,14 @@ def _truncate_reasoning_for_storage(text: str) -> str:
     return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
 
 
+def _nonnegative_int(value: Any) -> int:
+    """Coerce a provider usage count to a nonnegative integer."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _cache_hit_tokens(usage: Dict[str, Any]) -> int:
     """Prompt tokens served from the provider's prefix cache.
 
@@ -132,15 +140,15 @@ def _cache_hit_tokens(usage: Dict[str, Any]) -> int:
     """
     details = usage.get("prompt_tokens_details")
     cached = details.get("cached_tokens") if isinstance(details, dict) else None
-    try:
-        return int(
-            usage.get("prompt_cache_hit_tokens")
-            or cached
-            or usage.get("cache_read_input_tokens")
-            or 0
-        )
-    except (TypeError, ValueError):
-        return 0
+    # A malformed provider value (negative, or an infinite float that raises
+    # OverflowError on int()) must read as "unknown" rather than escaping and
+    # discarding the whole usage payload at the call site.
+    return _nonnegative_int(
+        usage.get("prompt_cache_hit_tokens")
+        or cached
+        or usage.get("cache_read_input_tokens")
+        or 0
+    )
 
 
 def _cache_miss_tokens(usage: Dict[str, Any], hit: int = None) -> int:
@@ -155,11 +163,11 @@ def _cache_miss_tokens(usage: Dict[str, Any], hit: int = None) -> int:
     try:
         explicit = usage.get("prompt_cache_miss_tokens")
         if explicit is not None:
-            return int(explicit)
+            return _nonnegative_int(explicit)
         if hit is None:
             hit = _cache_hit_tokens(usage)
-        prompt = int(usage.get("prompt_tokens") or 0)
-        return max(0, prompt - int(hit or 0))
+        prompt = _nonnegative_int(usage.get("prompt_tokens"))
+        return max(0, prompt - _nonnegative_int(hit or 0))
     except (TypeError, ValueError):
         return 0
 
@@ -573,6 +581,13 @@ class AgentStreamExecutor:
                 })
             except Exception as e:
                 logger.error(f"Event callback error: {e}")
+
+    def _ui_run_usage(self):
+        from agent.protocol.usage import normalize_usage
+        usage = normalize_usage(self.run_usage)
+        if usage is not None:
+            usage['scope'] = 'own'
+        return usage
 
     # Tools whose successful execution may have produced a user-facing file.
     _ARTIFACT_TOOLS = ("write", "edit", "bash")
@@ -1372,7 +1387,8 @@ class AgentStreamExecutor:
                 # Emit before agent_end so channels can mark UI as cancelled
                 self._emit_event("agent_cancelled", {"final_response": final_response})
             logger.info(f"[Agent] 🏁 Done ({turn} turns)" + (" [cancelled]" if cancelled else ""))
-            self._emit_event("agent_end", {"final_response": final_response, "cancelled": cancelled})
+            self._emit_event("agent_end", {"final_response": final_response, "cancelled": cancelled,
+                                           "usage": self.run_usage})
 
         return final_response
 
@@ -2058,14 +2074,7 @@ class AgentStreamExecutor:
                 # re-sends the whole history); last_usage alone would report
                 # only the final call. input is summed across rounds because
                 # every round pays for the (growing) prompt it re-sends.
-                _tot = self.agent.run_usage_total or {
-                    "input": 0, "output": 0, "cache_hit": 0, "cache_miss": 0,
-                }
-                _tot["input"] += int(self.agent.last_usage.get("prompt_tokens") or 0)
-                _tot["output"] += int(self.agent.last_usage.get("completion_tokens") or 0)
-                _tot["cache_hit"] += int(self.agent.last_usage.get("prompt_cache_hit_tokens") or 0)
-                _tot["cache_miss"] += int(self.agent.last_usage.get("prompt_cache_miss_tokens") or 0)
-                self.agent.run_usage_total = _tot
+                self.agent.run_usage_total = self._ui_run_usage()
             except (TypeError, ValueError):
                 pass
 

@@ -259,15 +259,21 @@ function splitAssistantTurn(msg) {
         // Everything the Agent did up to and including asking for help. No
         // answer text and no seq: those belong to the turn's last bubble.
         bubbles.push({
-            msg: Object.assign({}, msg, { steps: pending, content: '', artifacts: null, extras: null }),
+            msg: Object.assign({}, msg, { steps: pending, content: '', artifacts: null, extras: null, usage: null }),
             peer: null,
         });
-        bubbles.push({
-            msg: { content: payload.content || '', steps: [], created_at: msg.created_at },
-            peer: {
-                id: payload.agent_id || '',
-                name: payload.agent_name || payload.agent_id || '',
-            },
+        const peer = {
+            id: payload.agent_id || '',
+            name: payload.agent_name || payload.agent_id || '',
+        };
+        const childBubbles = splitAssistantTurn({
+            content: payload.content || '',
+            steps: steps[i].delegation_steps || [],
+            usage: steps[i].delegation_usage,
+            created_at: msg.created_at,
+        });
+        childBubbles.forEach(child => {
+            bubbles.push({ msg: child.msg, peer: child.peer || peer });
         });
         pending = [];
     }
@@ -410,8 +416,8 @@ function evolutionContentKey(text) {
 // reply cost?" even after a reload.
 function renderMessageUsageHtml(usage) {
     if (!usage || typeof usage !== 'object') return '';
-    const input = Math.max(0, Number(usage.prompt_tokens) || 0);
-    const output = Math.max(0, Number(usage.completion_tokens) || 0);
+    const input = Math.max(0, Number(usage.prompt_tokens ?? usage.input) || 0);
+    const output = Math.max(0, Number(usage.completion_tokens ?? usage.output) || 0);
     const total = Math.max(0, Number(usage.total_tokens) || (input + output));
     if (!total && !input && !output) return '';
     const cached = Math.max(0, Number(usage.prompt_cache_hit_tokens) || 0);
@@ -549,7 +555,9 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
     // Token usage persisted on the message (history replay). Without this the
     // badge would only appear live and vanish on refresh / session switch /
     // restart. Same shape the live SSE `done` handler renders in send.js.
-    const existingUsage = msg && msg.extras && msg.extras.usage;
+    // Hydrated member usage and team totals live on the display message.
+    // extras is only a fallback for older history payloads.
+    const existingUsage = msg && (msg.usage || (msg.extras && msg.extras.usage));
     if (existingUsage) renderTurnUsageBadge(el, existingUsage);
     renderBotSpeakerButton(el, displayContent);
     applyHighlighting(el);
@@ -561,7 +569,13 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
 // a persisted badge looks identical to a live one. Never throws.
 function renderTurnUsageBadge(botEl, usage) {
     try {
-        const u = usage || {};
+        const raw = usage || {};
+        const u = {
+            input: raw.input ?? raw.prompt_tokens,
+            output: raw.output ?? raw.completion_tokens,
+            cache_hit: raw.cache_hit ?? raw.prompt_cache_hit_tokens,
+            cache_miss: raw.cache_miss ?? raw.prompt_cache_miss_tokens,
+        };
         const badge = botEl && botEl.querySelector('.turn-tokens');
         if (!badge) return;
         const fmt = (n) => (n == null ? '0' : (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)));

@@ -177,15 +177,8 @@ class WebChannel(ChatChannel):
                 return None
             total = getattr(agent, "run_usage_total", None)
             if isinstance(total, dict) and (total.get("input") or total.get("output")):
-                inp = int(total.get("input") or 0)
-                out = int(total.get("output") or 0)
-                return {
-                    "input": inp,
-                    "output": out,
-                    "total": inp + out,
-                    "cache_hit": int(total.get("cache_hit") or 0),
-                    "cache_miss": int(total.get("cache_miss") or 0),
-                }
+                from agent.protocol.usage import normalize_usage
+                return normalize_usage(total)
             usage = getattr(agent, "last_usage", None)
             if not isinstance(usage, dict):
                 return None
@@ -194,13 +187,8 @@ class WebChannel(ChatChannel):
             total_tok = int(usage.get("total_tokens") or 0)
             if not (inp or out or total_tok):
                 return None
-            return {
-                "input": inp,
-                "output": out,
-                "total": total_tok or (inp + out),
-                "cache_hit": int(usage.get("prompt_cache_hit_tokens") or 0),
-                "cache_miss": int(usage.get("prompt_cache_miss_tokens") or 0),
-            }
+            from agent.protocol.usage import normalize_usage
+            return normalize_usage(usage)
         except Exception as e:
             logger.debug(f"[WebChannel] last-turn usage lookup failed: {e}")
             return None
@@ -458,11 +446,13 @@ class WebChannel(ChatChannel):
                 })
 
             elif event_type == "peer_message_end":
+                from agent.protocol.usage import normalize_usage
                 publish({
                     "type": "peer_end",
                     "card_id": data.get("card_id"),
                     "agent_id": data.get("agent_id"),
                     "status": data.get("status", "done"),
+                    "usage": normalize_usage(data.get("usage")),
                 })
 
             elif event_type == "tool_retrieval":

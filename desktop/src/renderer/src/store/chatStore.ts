@@ -233,16 +233,17 @@ function splitHistoryMessage(m: HistoryMessage): ChatMessage[] {
     // last bubble, not this one.
     out.push(
       historyToMessage({
-        ...m, steps: pending, content: '', artifacts: undefined, _seq: undefined, run_state: undefined,
+        ...m, steps: pending, content: '', artifacts: undefined, _seq: undefined, run_state: undefined, usage: undefined,
       })
     )
-    out.push({
-      id: uid('assistant'),
+    out.push(...splitHistoryMessage({
       role: 'assistant',
       content: payload.content,
-      timestamp: m.created_at,
+      created_at: m.created_at,
+      steps: step.delegation_steps || [],
+      usage: step.delegation_usage,
       extras: { agent_id: payload.agent_id, peer: true },
-    })
+    }))
     pending = []
   }
   if (pending.length || (m.content || '').trim() || m.run_state) {
@@ -460,7 +461,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
         case 'peer_end': {
           const done = peers.pop()
-          if (done) updateMsg(sid, done.id, (m) => ({ ...m, isStreaming: false }))
+          if (done) updateMsg(sid, done.id, (m) => ({ ...m, isStreaming: false, usage: data.usage ?? m.usage }))
           resumed = true
           break
         }

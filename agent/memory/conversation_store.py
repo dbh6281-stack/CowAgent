@@ -1710,6 +1710,31 @@ class ConversationStore:
             detail["full_output"] = chosen[1]
         return detail
 
+    def load_run_steps(self, session_id: str, run_id: str) -> List[Dict[str, Any]]:
+        """UI steps for exactly one delegated run, never the relay session's tail.
+
+        Relay sessions are reused. All three keys are required so reloading an
+        earlier hand-off cannot show a later task or another Agent's work.
+        """
+        if not session_id or not run_id:
+            return []
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    "SELECT seq, role, content, created_at, extras, run_id FROM messages "
+                    "WHERE agent_id = ? AND session_id = ? AND run_id = ? ORDER BY seq",
+                    (self._agent_id, session_id, run_id),
+                ).fetchall()
+            finally:
+                conn.close()
+        from config import conf
+        turns = _group_into_display_turns(
+            rows, include_thinking=bool(conf().get("enable_thinking", False))
+        )
+        return [step for turn in turns if turn.get("role") == "assistant"
+                for step in turn.get("steps", [])]
+
     def load_history_page(
         self,
         session_id: str,

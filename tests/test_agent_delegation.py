@@ -405,6 +405,25 @@ def test_delegate_relays_the_teammates_turn_bracketed_by_who_is_speaking():
     assert emitted[-1][1]["agent_id"] == "research"
 
 
+def test_delegate_reports_direct_usage_and_passes_nested_usage_without_recounting():
+    class UsageBridge(FakeBridge):
+        def agent_reply(self, query, context=None, on_event=None):
+            on_event({'type': 'reasoning_update', 'data': {'delta': 'checking'}})
+            on_event({'type': 'peer_message_end', 'data': {'agent_id': 'nested', 'usage': {'prompt_tokens': 20}}})
+            # A nested executor's accounting event must not reach this parent.
+            on_event({'type': 'delegated_usage', 'data': {'usage': {'prompt_tokens': 20}}})
+            on_event({'type': 'agent_end', 'data': {'usage': {'prompt_tokens': 100, 'completion_tokens': 10}}})
+            return Reply(ReplyType.TEXT, 'answer')
+
+    emitted = []
+    tool = _tool(bridge=UsageBridge())
+    tool.event_callback = lambda kind, data: emitted.append((kind, data))
+    tool.execute({'agent_id': 'research', 'task': 'check'})
+    accounting = [d for k, d in emitted if k == 'delegated_usage']
+    assert accounting == [{'usage': {'prompt_tokens': 100, 'completion_tokens': 10}}]
+    assert emitted[-1][1]['usage']['prompt_tokens'] == 100
+
+
 def test_delegate_closes_the_teammates_turn_when_the_hand_off_fails():
     """A teammate that dies mid-sentence still gives the floor back."""
 
