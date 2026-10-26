@@ -354,14 +354,14 @@ class MinimaxBot(Bot):
                                         "content": result_content
                                     })
 
+                        for tool_result in tool_results:
+                            converted.append(tool_result)
+
                         if text_parts:
                             converted.append({
                                 "role": "user",
                                 "content": "\n".join(text_parts)
                             })
-
-                        for tool_result in tool_results:
-                            converted.append(tool_result)
                     else:
                         # Keep as-is for multimodal content (e.g. image_url blocks)
                         converted.append(msg)
