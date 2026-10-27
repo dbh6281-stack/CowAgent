@@ -1205,7 +1205,7 @@ class WecomBotChannel(ChatChannel):
     def _ensure_image_format(file_path: str) -> str:
         """Ensure image is JPG or PNG (the only formats wecom supports). Convert if needed."""
         try:
-            from PIL import Image
+            from PIL import Image, ImageOps
             img = Image.open(file_path)
             fmt = (img.format or "").upper()
             if fmt in ("JPEG", "PNG"):
@@ -1218,11 +1218,19 @@ class WecomBotChannel(ChatChannel):
                 # Extension doesn't match — rename/copy with correct extension
                 correct_ext = ".jpg" if fmt == "JPEG" else ".png"
                 out_path = state_dir.tmp_file("wecom_fmt", correct_ext)
+                # Bake the EXIF orientation into the pixels before
+                # re-saving: a bare re-save drops the tag, leaving a
+                # portrait photo sideways in every viewer.
+                img = ImageOps.exif_transpose(img)
                 img.save(out_path, fmt)
                 logger.info(f"[WecomBot] Image renamed: {file_path} -> {out_path} ({fmt})")
                 return out_path
 
             # Unsupported format (WebP, GIF, BMP, etc.) — convert to PNG
+            # Bake the EXIF orientation into the pixels before
+            # converting: a bare re-save drops the tag, leaving a
+            # portrait photo sideways in every viewer.
+            img = ImageOps.exif_transpose(img)
             if img.mode == "RGBA":
                 out_path = state_dir.tmp_file("wecom_fmt", ".png")
                 img.save(out_path, "PNG")
@@ -1240,8 +1248,11 @@ class WecomBotChannel(ChatChannel):
     def _compress_image(file_path: str, max_bytes: int) -> str:
         """Compress image to fit within max_bytes. Returns new path or empty string."""
         try:
-            from PIL import Image
-            img = Image.open(file_path)
+            from PIL import Image, ImageOps
+            # Bake the EXIF orientation into the pixels before
+            # re-encoding: a bare re-save drops the tag, leaving a
+            # portrait photo sideways in every viewer.
+            img = ImageOps.exif_transpose(Image.open(file_path))
             if img.mode == "RGBA":
                 img = img.convert("RGB")
 
