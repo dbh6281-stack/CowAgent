@@ -518,6 +518,14 @@ body * {
   padding: 0;
 }
 
+/* Message list only. It follows the chat pane (a small side gutter,
+   not a locked 48rem / 768px strip) so a large window uses the width.
+   The composer stays on its own narrower column. */
+.chat-column {
+  width: calc(100% - 3rem);
+  margin-inline: auto;
+}
+
 /* ============================================================
    Composer toolbar responsiveness.
    The chip row (workspace / permission / model selectors) is a

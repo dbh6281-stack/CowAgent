@@ -684,7 +684,9 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   return (
     <div className="composer-bar flex-shrink-0 border-t border-default bg-surface px-4 py-3">
       {/* One tall rounded card holds the textarea on top and a toolbar row
-          (chips + actions) at the bottom, matching the web console composer. */}
+          (chips + actions) at the bottom, matching the web console composer.
+          Kept at max-w-3xl: the transcript can use the wide pane, the input
+          stays a comfortable writing width. */}
       <div
         className={`composer-card max-w-3xl mx-auto relative rounded-2xl border bg-inset transition-colors ${
           dragOver ? 'border-accent ring-2 ring-accent/30' : 'border-strong focus-within:border-accent'

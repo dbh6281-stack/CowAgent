@@ -549,7 +549,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
             )}
           </div>
         ) : (
-          <div ref={contentRef} className="py-3 max-w-3xl mx-auto">
+          <div ref={contentRef} className="chat-column py-3">
             {messages.map((msg, i) =>
               msg.kind === 'divider' ? (
                 <div key={msg.id} className="flex items-center gap-3 px-6 py-3 text-content-tertiary">
