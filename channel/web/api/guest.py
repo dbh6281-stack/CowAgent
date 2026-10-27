@@ -631,9 +631,13 @@ class GuestShareActionHandler:
             store.revoke_sessions(slug)
             service.forget_profile(slug)
         elif action == "password":
+            from config import conf
+
             password = str(_body().get("password") or "")
             if password and len(password) < 6:
                 _fail(400, "Password must be at least 6 characters.")
+            if password and password == str(conf().get("web_password") or ""):
+                _fail(400, "Use a password different from the console password.", "console_password")
             store.set_password(slug, password)
             login_limiter.reset(slug)
             service.forget_profile(slug)

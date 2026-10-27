@@ -251,6 +251,15 @@ def test_owner_actions_retire_existing_visitor_tokens(guest_env, action, body):
         assert app.request(f"/share/{share['share_token']}").status.startswith("404")
 
 
+def test_a_page_password_may_not_be_the_console_password(guest_env):
+    app = _app()
+    cookie = _owner_cookie(app)
+    _create_confirmed(app, cookie, config_body={"name": "Demo", "access": {"password_required": True}})
+    res = _post(app, "/api/guest-shares/demo/password", {"password": "owner-secret-pass"}, {"Cookie": cookie})
+    assert res.status.startswith("400") and json.loads(res.data)["reason"] == "console_password"
+    assert not store.get_entry("demo").get("password_hash")
+
+
 def test_renewing_a_token_keeps_the_visitor_and_needs_no_password(guest_env):
     app = _app()
     cookie = _owner_cookie(app)

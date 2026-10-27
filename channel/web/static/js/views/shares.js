@@ -120,7 +120,9 @@ function _shareApi(path, opts = {}) {
     return fetch('/api/guest-shares' + path, init).then(async r => {
         let data = {};
         try { data = await r.json(); } catch (_) { /* empty body */ }
-        if (!r.ok || data.status === 'error') throw new Error(data.message || `HTTP ${r.status}`);
+        if (!r.ok || data.status === 'error') {
+            throw Object.assign(new Error(data.message || `HTTP ${r.status}`), { reason: data.reason || '' });
+        }
         return data;
     });
 }
@@ -197,12 +199,20 @@ function renderSharesView() {
             <div class="share-callout items-center">
                 <i class="fas fa-lock" style="margin-top:0"></i>
                 <span class="flex-1">${escapeHtml(t('shares_need_console_password'))}</span>
-                <button onclick="switchConfigTab('basic')" class="share-action !text-amber-700 dark:!text-amber-300 hover:!bg-amber-100 dark:hover:!bg-amber-500/10 flex-shrink-0">
+                <button onclick="goToConsolePassword()" class="share-action !text-amber-700 dark:!text-amber-300 hover:!bg-amber-100 dark:hover:!bg-amber-500/10 flex-shrink-0">
                     ${escapeHtml(t('shares_go_settings'))}<i class="fas fa-arrow-right"></i>
                 </button>
             </div>`;
     }
     container.innerHTML = sharesList.map(shareCardHtml).join('');
+}
+
+function goToConsolePassword() {
+    switchConfigTab('basic');
+    const input = document.getElementById('cfg-password');
+    if (!input) return;
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => input.focus({ preventScroll: true }), 300);
 }
 
 const _SHARE_STATUS = {
@@ -809,9 +819,13 @@ function saveShareEditor() {
     const save = isNew
         ? _shareApi('', { method: 'POST', json: { config, guest_md: guestMd } })
         : _shareApi('/' + shareEditing.slug, { method: 'PUT', json: { config, guest_md: guestMd } });
-    save.then(data => (pwdOn && password)
-            ? _shareApi(`/${data.share.slug}/password`, { method: 'POST', json: { password } })
-            : data)
+    save.then(data => {
+            // Saving again after a later step fails must update this share, not create another.
+            if (isNew && data.share) shareEditing = data.share;
+            return (pwdOn && password)
+                ? _shareApi(`/${data.share.slug}/password`, { method: 'POST', json: { password } })
+                : data;
+        })
         // The share is saved by now; a refused logo must not leave the form
         // open, where saving again would create a second share.
         .then(data => Promise.resolve(_saveShareLogo(data)).catch(err => {
@@ -826,7 +840,8 @@ function saveShareEditor() {
         })
         .catch(err => {
             btn.disabled = false;
-            _shareEditorError(err.message);
+            _shareEditorError(err.reason === 'console_password' ? t('shares_password_console') : err.message);
+            if (isNew && shareEditing) loadSharesView();
         });
 }
 
