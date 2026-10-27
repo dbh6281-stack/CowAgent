@@ -561,7 +561,12 @@ class OpenAIHTTPClient:
                     data_lines.append(value)
             return None
 
-        for raw in resp.iter_content(chunk_size=None, decode_unicode=False):
+        # Read in fixed-size slices, never `chunk_size=None`: urllib3 only
+        # streams with `None` when the response is chunk-encoded. A proxy that
+        # delimits SSE by closing the connection (no Transfer-Encoding, no
+        # Content-Length) makes `read(None)` block until EOF, so the whole
+        # reply arrives in one burst at the end.
+        for raw in resp.iter_content(chunk_size=1024, decode_unicode=False):
             if not raw:
                 continue
             # A CR at a network-chunk boundary already ended its line. The
