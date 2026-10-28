@@ -28,7 +28,13 @@ description: "CowAgent デスクトップクライアントで内蔵テーマを
 - 1 ファイルあたり 16MB 以下、テーマ全体で 64MB 以下
 - 既存テーマと ID が同じ場合は置き換えを確認し、内蔵テーマと同じ ID の場合は自動的にリネームします
 
-インポートしたテーマは `~/.cow/themes/` に、テーマごとに 1 フォルダとして保存されます。このダイアログ下部の「Open themes folder」から直接管理でき、フォルダを削除すればテーマも削除されます。テーマフォルダを直接コピーしても、次にテーマ一覧を開いたときに表示されます。
+インポートしたテーマは `~/cow/system/themes/`（Agent のワークスペースを変更している場合はその中の `system/themes/`）に、テーマごとに 1 フォルダとして保存されます。このダイアログ下部の「Open themes folder」から直接管理でき、フォルダを削除すればテーマも削除されます。テーマフォルダを直接コピーしても、次にテーマ一覧を開いたときに表示されます。
+
+## Web コンソール
+
+Web コンソールでもテーマを使えます。左下のバージョン番号をクリックし、メニューの「Theme」にカーソルを合わせると切り替えられ、一覧下部の「Custom theme…」からテーマパッケージのインポートや Agent によるテーマ作成ができます。使い方はクライアントと同じです。
+
+Web コンソールとデスクトップクライアントは `~/cow/system/themes/` フォルダを共有しているため、どちらかでインポート・生成したテーマはもう一方でもそのまま使えます。CowAgent をサーバーにデプロイしている場合、このフォルダは CowAgent を実行しているマシン上にあります。Web コンソールは `shape`（角丸・フォント）にはまだ対応していませんが、配色・壁紙・アイコンはすべて利用できます。
 
 ## テーマの構成
 
@@ -125,7 +131,7 @@ my-theme/
 
 ## Agent にテーマを作らせる
 
-デスクトップクライアントの Agent にテーマを作らせることもできます。Agent はテーマを `~/.cow/themes/` に書き込み、画像生成が設定されていれば背景壁紙とアイコンも生成できます。
+デスクトップクライアントの Agent にテーマを作らせることもできます。Agent はテーマを `~/cow/system/themes/` に書き込み、画像生成が設定されていれば背景壁紙とアイコンも生成できます。
 
 いちばん簡単なのは、カスタムテーマのダイアログの「Let the Agent create one」の横にある「Start」をクリックする方法です。新しいチャットが開いてプロンプトが入力済みになるので、末尾に希望のスタイルを書き足して送信するだけです。参考画像（好きなキャラクターや風景など）を添付すれば、Agent はそれをもとに壁紙とアイコンを生成します。
 
@@ -135,7 +141,7 @@ my-theme/
 デスクトップクライアントのテーマを作ってください。
 
 要件：
-1. ~/.cow/themes/<テーマid>/ に theme.json を作成する。id は小文字英字とハイフンで、構造は {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}。
+1. ~/cow/system/themes/<テーマid>/ に theme.json を作成する。id は小文字英字とハイフンで、構造は {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}。
 2. light と dark の colors に次のキーをすべて指定する：accent、accentHover、accentActive、accentSoft、accentContrast、bubbleUserBg、bubbleUserText、bgBase、bgSurface、bgSurface2、bgElevated、bgInset、bgInset2、textPrimary、textSecondary、textTertiary、textDisabled、borderDefault、borderStrong、borderSubtle。背景は低彩度、文字は読みやすく、テーマカラー上の白い文字も見やすくすること。
 3. 画像を生成できる場合は、画像生成スキルで文字のない画像を 2 枚、同じフォルダに作る：
    - wallpaper.jpg：16:9 の壁紙、主題は右寄り、暗すぎない明るさ。theme.json のトップレベルに "wallpaper": {"image": "wallpaper.jpg", "overlayOpacity": 0.25, "glass": true} を追加し、ライト・ダークで共用する。モードごとに別の壁紙を求めた場合は wallpaper-light.jpg と wallpaper-dark.jpg の 2 枚を生成し、トップレベルの wallpaper は書かずに、light と dark それぞれに対応する画像を指す wallpaper を追加する

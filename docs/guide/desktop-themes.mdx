@@ -28,7 +28,13 @@ On import the app checks that:
 - Each file is at most 16MB and the whole theme at most 64MB
 - An existing theme with the same ID is only replaced after you confirm; an ID taken by a built-in theme is renamed automatically
 
-Imported themes live in `~/.cow/themes/`, one folder per theme. Click "Open themes folder" at the bottom of that dialog to manage them: delete a folder to remove a theme, or copy a theme folder in directly; it shows up the next time you open the theme list.
+Imported themes live in `~/cow/system/themes/` (`system/themes/` under your Agent workspace if you moved it), one folder per theme. Click "Open themes folder" at the bottom of that dialog to manage them: delete a folder to remove a theme, or copy a theme folder in directly; it shows up the next time you open the theme list.
+
+## Web Console
+
+The web console supports themes too. Click the version number at the bottom left and hover "Theme" in the menu to switch; "Custom theme…" at the bottom of the list imports a package or has the Agent make one, just like in the app.
+
+The web console and the desktop app share the `~/cow/system/themes/` folder, so a theme imported or generated in one is available in the other. When CowAgent runs on a server, the folder is on the machine running CowAgent. The web console does not support `shape` (corner radius, fonts) yet; colors, wallpapers and logos all work.
 
 ## Theme Structure
 
@@ -125,7 +131,7 @@ For different wallpapers per appearance, drop the top-level `wallpaper` and set 
 
 ## Let the Agent Create a Theme
 
-The Agent in the desktop app can build a theme for you. It writes the theme to `~/.cow/themes/`, and if image generation is configured it can generate the wallpaper and logo too.
+The Agent in the desktop app can build a theme for you. It writes the theme to `~/cow/system/themes/`, and if image generation is configured it can generate the wallpaper and logo too.
 
 The quickest way is the "Start" button next to "Let the Agent create one" in the custom theme dialog: it opens a new chat with the prompt filled in, so you only add the style you want at the end and send it. You can also attach reference images (a character or scene you like), and the Agent will base the wallpaper and logo on them.
 
@@ -135,7 +141,7 @@ You can also send the prompt below in any chat, with the style you want on the l
 Create a theme for this desktop app.
 
 Requirements:
-1. Create theme.json in ~/.cow/themes/<theme-id>/ with a lowercase, hyphenated id, shaped like {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}.
+1. Create theme.json in ~/cow/system/themes/<theme-id>/ with a lowercase, hyphenated id, shaped like {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}.
 2. Fill these keys in both light and dark colors: accent, accentHover, accentActive, accentSoft, accentContrast, bubbleUserBg, bubbleUserText, bgBase, bgSurface, bgSurface2, bgElevated, bgInset, bgInset2, textPrimary, textSecondary, textTertiary, textDisabled, borderDefault, borderStrong, borderSubtle. Keep backgrounds low-saturation, text easy to read, and white text on the accent legible.
 3. If you can generate images, use an image generation skill to make two images without text in the same folder:
    - wallpaper.jpg: a 16:9 wallpaper with the subject toward the right, moderately bright rather than dark; add "wallpaper": {"image": "wallpaper.jpg", "overlayOpacity": 0.25, "glass": true} at the top level of theme.json, shared by both appearances. If I ask for different wallpapers per appearance, generate wallpaper-light.jpg and wallpaper-dark.jpg instead, skip the top-level wallpaper, and add a wallpaper to light and to dark pointing to each image
