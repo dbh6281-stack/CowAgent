@@ -340,6 +340,11 @@ class AgentStreamExecutor:
         # stamps it on the stored answer.
         self.run_usage: Optional[Dict[str, int]] = None
 
+        # The loop-breaker hint rides in the message list so the next model
+        # call sees it, then it is removed again: the user never wrote it, so
+        # it must not be stored as a user turn or summarised into memory.
+        self._pending_loop_hint: Optional[Dict[str, Any]] = None
+
     @staticmethod
     def _normalize_stream_usage(stream_usage: Dict[str, Any]) -> Dict[str, int]:
         """Normalize one provider usage payload to the console's field names."""
@@ -915,6 +920,41 @@ class AgentStreamExecutor:
         if len(self.tool_failure_history) > 50:
             self.tool_failure_history = self.tool_failure_history[-50:]
 
+    def _inject_loop_hint(self) -> None:
+        """Tell the model to answer with what it already has, for one call.
+
+        The hint is appended to the message list so the very next model call
+        sees it, then removed by :meth:`_drop_pending_loop_hint`. A message
+        the user never wrote must not outlive that call: stored as a user
+        turn it would show up in the chat history and be summarised into the
+        daily memory as if it were the user's request.
+        """
+        hint = {
+            "role": "user",
+            "content": [{
+                "type": "text",
+                "text": _t(
+                    "工具已成功执行并返回结果。请基于这些信息向用户做出回复，不要重复调用相同的工具。",
+                    "The tool already ran successfully and returned its result. Reply to the "
+                    "user from that result; do not call the same tool with the same arguments again.",
+                ),
+            }],
+        }
+        self.messages.append(hint)
+        self._pending_loop_hint = hint
+
+    def _drop_pending_loop_hint(self) -> None:
+        """Remove the loop hint the previous model call consumed, if any.
+
+        Removed by identity rather than index: steering, retries and context
+        compaction can insert or rebuild messages between injection and
+        removal. A hint compaction already discarded is simply forgotten.
+        """
+        hint, self._pending_loop_hint = self._pending_loop_hint, None
+        if hint is None:
+            return
+        self.messages[:] = [msg for msg in self.messages if msg is not hint]
+
     def run_stream(self, user_message: str) -> str:
         """
         Execute streaming reasoning loop
@@ -1029,8 +1069,14 @@ class AgentStreamExecutor:
                 logger.info(f"[Agent] Turn {turn}")
                 self._emit_event("turn_start", {"turn": turn})
 
-                # Call LLM (enable retry_on_empty for better reliability)
-                assistant_msg, tool_calls, stop_reason = self._call_llm_stream(retry_on_empty=True)
+                # Call LLM (enable retry_on_empty for better reliability). Any
+                # loop hint injected by the previous tool turn was meant for
+                # this call only, so drop it as the call returns - success or
+                # error alike.
+                try:
+                    assistant_msg, tool_calls, stop_reason = self._call_llm_stream(retry_on_empty=True)
+                finally:
+                    self._drop_pending_loop_hint()
                 final_response = assistant_msg
 
                 # A steer that arrived while the model was streaming takes
@@ -1284,14 +1330,11 @@ class AgentStreamExecutor:
                                     f"⚠️  Detected potential loop: '{tool_name}' called {recent_success_count} times "
                                     f"with same args. Adding hint to LLM to provide final response."
                                 )
-                                # Add a gentle hint message to guide LLM to respond
-                                self.messages.append({
-                                    "role": "user",
-                                    "content": [{
-                                        "type": "text",
-                                        "text": "工具已成功执行并返回结果。请基于这些信息向用户做出回复，不要重复调用相同的工具。"
-                                    }]
-                                })
+                                # Add a gentle hint message to guide LLM to respond.
+                                # It is temporary: the next model call sees it and
+                                # then drops it, so it never becomes a user turn in
+                                # the persisted conversation.
+                                self._inject_loop_hint()
                     elif tool_calls:
                         # If we have tool_calls but no tool_result_blocks (unexpected error),
                         # create error results for all tool calls to maintain message integrity
@@ -1361,6 +1404,9 @@ class AgentStreamExecutor:
                             and self.messages[prompt_insert_idx].get("role") == "user"):
                         self.messages.pop(prompt_insert_idx)
                         logger.debug("[Agent] Removed injected max-steps prompt from message history")
+                    # A hint injected by the last tool turn was consumed by this
+                    # summary call; drop it before the run winds down.
+                    self._drop_pending_loop_hint()
 
         except AgentCancelledError:
             # User-initiated stop: wind down message history cleanly so the
@@ -1382,6 +1428,10 @@ class AgentStreamExecutor:
                 clear_agent_run_id(_run_token)
             if self.steer_inbox is not None:
                 self.steer_inbox.close()
+            # Safety net for exits that never reached the next model call:
+            # cancel, an exception, or a run that ended on a tool turn. The
+            # hint is not part of the conversation, so no exit may keep it.
+            self._drop_pending_loop_hint()
             final_response = final_response.strip() if final_response else final_response
             if cancelled:
                 # Emit before agent_end so channels can mark UI as cancelled
