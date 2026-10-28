@@ -24,6 +24,15 @@ from config import conf
 from models.chatgpt.chat_gpt_session import ChatGPTSession
 
 
+def _completion_tokens(usage_meta: dict) -> int:
+    """Output tokens of a Gemini usageMetadata: the answer plus the thinking tokens.
+
+    Gemini reports thinking tokens in thoughtsTokenCount, apart from candidatesTokenCount,
+    but bills them as output.
+    """
+    return (usage_meta.get("candidatesTokenCount") or 0) + (usage_meta.get("thoughtsTokenCount") or 0)
+
+
 # OpenAI对话模型API (可用)
 class GoogleGeminiBot(Bot):
 
@@ -274,7 +283,7 @@ class GoogleGeminiBot(Bot):
                 "content": "".join(text_parts),
                 "usage": {
                     "prompt_tokens": usage_meta.get("promptTokenCount", 0),
-                    "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
+                    "completion_tokens": _completion_tokens(usage_meta),
                     "total_tokens": usage_meta.get("totalTokenCount", 0),
                 },
             }
@@ -846,7 +855,7 @@ class GoogleGeminiBot(Bot):
                 # reads (prompt_tokens is what the context indicator needs).
                 final_chunk["usage"] = {
                     "prompt_tokens": last_usage_meta.get("promptTokenCount", 0),
-                    "completion_tokens": last_usage_meta.get("candidatesTokenCount", 0),
+                    "completion_tokens": _completion_tokens(last_usage_meta),
                     "total_tokens": last_usage_meta.get("totalTokenCount", 0),
                 }
             yield final_chunk
