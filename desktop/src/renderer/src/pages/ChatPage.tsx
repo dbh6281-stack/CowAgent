@@ -25,6 +25,7 @@ import { useSessionStore, sessionOwner } from '../store/sessionStore'
 import { useAgentStore } from '../store/agentStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { startNewChat } from '../lib/newChat'
+import { PREFILL_EVENT } from '../store/draftStore'
 import { followingAfterUserScroll, shouldApplyBottomScroll, shouldFollowContentChange, shouldShowScrollToBottom } from '../lib/chatScroll'
 
 interface ChatPageProps {
@@ -106,6 +107,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const inputResetRef = useRef<ChatInputHandle>(null)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  // Text handed over by another surface (e.g. "create a theme with the Agent").
+  useEffect(() => {
+    const onPrefill = (e: Event) => inputResetRef.current?.((e as CustomEvent<string>).detail, [])
+    window.addEventListener(PREFILL_EVENT, onPrefill)
+    return () => window.removeEventListener(PREFILL_EVENT, onPrefill)
+  }, [])
 
   // The Agents page can hand the user straight into a group chat: it navigates
   // here with ?team=1 to pop the group-chat picker over the conversation. Clear
@@ -497,13 +505,13 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
 
         {isEmpty ? (
           <div data-home className="chat-home flex flex-col items-center justify-center h-full px-6 py-12">
-            {product.slots?.HomeLogo ? (
-              <div className="w-16 h-16 rounded-2xl mb-5 shadow-md overflow-hidden">
+            <div className="theme-logo w-16 h-16 rounded-2xl mb-5 shadow-md overflow-hidden">
+              {product.slots?.HomeLogo ? (
                 <product.slots.HomeLogo />
-              </div>
-            ) : (
-              <img src="./logo.jpg" alt="CowAgent" className="w-16 h-16 rounded-2xl mb-5 shadow-md" />
-            )}
+              ) : (
+                <img src="./logo.jpg" alt="CowAgent" className="block w-full h-full" />
+              )}
+            </div>
             <h1 className="text-xl font-semibold text-content mb-2">{t('chat_welcome')}</h1>
             <p className="text-content-tertiary text-sm text-center max-w-md mb-8 leading-relaxed whitespace-pre-line">
               {t('welcome_subtitle')}

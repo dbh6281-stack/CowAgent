@@ -95,6 +95,7 @@
                 "pages": [
                   "guide/quick-start",
                   "guide/desktop",
+                  "guide/desktop-themes",
                   "guide/manual-install",
                   "guide/upgrade"
                 ]
@@ -375,6 +376,7 @@
                 "pages": [
                   "zh/guide/quick-start",
                   "zh/guide/desktop",
+                  "zh/guide/desktop-themes",
                   "zh/guide/manual-install",
                   "zh/guide/upgrade"
                 ]
@@ -655,6 +657,7 @@
                 "pages": [
                   "ja/guide/quick-start",
                   "ja/guide/desktop",
+                  "ja/guide/desktop-themes",
                   "ja/guide/manual-install",
                   "ja/guide/upgrade"
                 ]

@@ -332,7 +332,10 @@ export const Modal: React.FC<{
   elevated?: boolean
 }> = ({ open, title, onClose, children, footer, headerRight, size = 'md', elevated = false }) => {
   if (!open) return null
-  return (
+  // Portaled to <body>: a modal opened from inside a panel with a
+  // backdrop-filter (glass themes) would otherwise be positioned and clipped
+  // relative to that panel instead of the window.
+  return createPortal(
     <div
       className={`fixed inset-0 ${elevated ? 'z-[60]' : 'z-50'} flex items-center justify-center bg-black/40 p-4`}
       onMouseDown={(e) => {
@@ -357,7 +360,8 @@ export const Modal: React.FC<{
         <div className={`px-5 py-4 space-y-4 overflow-y-auto ${size === 'xl' ? 'h-[70vh]' : 'max-h-[60vh]'}`}>{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-default">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

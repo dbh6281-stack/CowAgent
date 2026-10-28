@@ -2,6 +2,12 @@
 // Electron bridge
 // ============================================================
 
+export type ThemeImportResult =
+  | { status: 'ok'; id: string; name: string }
+  | { status: 'exists'; id: string; name: string; path: string }
+  | { status: 'canceled' }
+  | { status: 'error'; code: 'no_theme' | 'bad_json' | 'bad_zip' | 'too_large' | 'failed' }
+
 export interface ElectronAPI {
   getBackendPort: () => Promise<number | null>
   getBackendStatus: () => Promise<string>
@@ -42,9 +48,15 @@ export interface ElectronAPI {
   // Themes (bundled + user themes from ~/.cow/themes), images inlined.
   listThemes?: () => Promise<Record<string, unknown>[]>
   getThemesDir?: () => Promise<string>
+  importTheme?: (opts: {
+    path?: string
+    title?: string
+    overwrite?: boolean
+    reserved?: string[]
+  }) => Promise<ThemeImportResult>
   // Optional app config: first-run default theme + display name. Null when
   // the build ships no app config (standard build).
-  getAppConfig?: () => Promise<{ defaultTheme?: string; appName?: string } | null>
+  getAppConfig?: () => Promise<{ defaultTheme?: string; hiddenThemes?: string[]; appName?: string } | null>
   // Generic HTTPS relay via the main process (bypasses renderer CORS).
   httpRelay?: (req: {
     url: string

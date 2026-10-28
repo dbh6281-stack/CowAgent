@@ -300,6 +300,37 @@ const translations: Record<string, Record<string, string>> = {
     menu_theme_light: '浅色模式',
     menu_theme_dark: '深色模式',
     menu_theme_picker: '主题',
+    theme_add: '自定义主题…',
+    theme_add_title: '自定义主题',
+    theme_drop_hint: '将主题 zip 或文件夹拖到这里，或',
+    theme_drop_pick: '点击选择',
+    theme_drop_types: '需包含 theme.json，可附带壁纸图片，单个文件不超过 16MB',
+    theme_importing: '正在导入…',
+    theme_agent_title: '让 Agent 帮你制作',
+    theme_agent_desc: '描述想要的风格（可附上参考图），Agent 会生成浅色与深色配色；配置了图片生成时还会绘制壁纸和图标。',
+    theme_agent_start: '开始制作',
+    theme_agent_prompt:
+      '帮我制作一个桌面客户端主题。\n\n' +
+      '要求：\n' +
+      '1. 在 {dir}/<主题id>/ 下创建 theme.json，id 用小写英文和连字符，结构为 {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}。\n' +
+      '2. light 和 dark 的 colors 都填这些键：accent、accentHover、accentActive、accentSoft、accentContrast、bubbleUserBg、bubbleUserText、bgBase、bgSurface、bgSurface2、bgElevated、bgInset、bgInset2、textPrimary、textSecondary、textTertiary、textDisabled、borderDefault、borderStrong、borderSubtle。背景低饱和，文字清晰易读，主题色上的白字也要看得清。\n' +
+      '3. 能生成图片的话，用图片生成技能在同一目录生成两张不带文字的图：\n' +
+      '   - wallpaper.jpg：16:9 壁纸，主体偏右，亮度适中、不要太暗；在 theme.json 最外层加上 "wallpaper": {"image": "wallpaper.jpg", "overlayOpacity": 0.25, "glass": true}，深浅模式共用。如果我要求深浅模式用不同壁纸，就生成 wallpaper-light.jpg 和 wallpaper-dark.jpg 两张，不写最外层的 wallpaper，改为在 light 和 dark 里各加一个 wallpaper，分别指向这两张图\n' +
+      '   - logo.png：正方形，用作新对话页中间的图标（不是应用图标），放在目录里即可，不用写进 theme.json\n' +
+      '4. 如果我发了参考图，生成图片时把参考图作为图片输入（垫图），让角色和画风与参考图一致，配色也从参考图中提取。\n' +
+      '5. 写完确认 theme.json 是合法 JSON，然后告诉我主题名称。\n\n' +
+      '我想要的风格：',
+    theme_docs: '主题文档',
+    theme_open_dir: '打开主题文件夹',
+    theme_import_dialog_title: '选择主题包（.zip、主题文件夹或 theme.json）',
+    theme_import_replace_title: '替换主题',
+    theme_import_replace_msg: '已存在主题「{name}」，是否用导入的版本替换？',
+    theme_import_replace_ok: '替换',
+    theme_import_err_no_theme: '未找到 theme.json，请检查主题包结构',
+    theme_import_err_bad_json: 'theme.json 不是有效的 JSON',
+    theme_import_err_bad_zip: '无法读取该压缩包',
+    theme_import_err_too_large: '主题包过大（单个文件不超过 16MB，总计不超过 64MB）',
+    theme_import_err_failed: '导入失败，请重试',
     menu_language: '语言',
     menu_website: '官网',
     menu_docs: '文档中心',
@@ -1289,6 +1320,37 @@ const translations: Record<string, Record<string, string>> = {
     menu_theme_light: 'Light mode',
     menu_theme_dark: 'Dark mode',
     menu_theme_picker: 'Theme',
+    theme_add: 'Custom theme…',
+    theme_add_title: 'Custom theme',
+    theme_drop_hint: 'Drop a theme .zip or folder here, or',
+    theme_drop_pick: 'browse',
+    theme_drop_types: 'Must contain theme.json; wallpaper images optional, up to 16MB each',
+    theme_importing: 'Importing…',
+    theme_agent_title: 'Let the Agent create one',
+    theme_agent_desc: 'Describe a style (reference images welcome) and the Agent designs light and dark palettes, plus a wallpaper and logo when image generation is set up.',
+    theme_agent_start: 'Start',
+    theme_agent_prompt:
+      'Create a theme for this desktop app.\n\n' +
+      'Requirements:\n' +
+      '1. Create theme.json in {dir}/<theme-id>/ with a lowercase, hyphenated id, shaped like {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}.\n' +
+      '2. Fill these keys in both light and dark colors: accent, accentHover, accentActive, accentSoft, accentContrast, bubbleUserBg, bubbleUserText, bgBase, bgSurface, bgSurface2, bgElevated, bgInset, bgInset2, textPrimary, textSecondary, textTertiary, textDisabled, borderDefault, borderStrong, borderSubtle. Keep backgrounds low-saturation, text easy to read, and white text on the accent legible.\n' +
+      '3. If you can generate images, use an image generation skill to make two images without text in the same folder:\n' +
+      '   - wallpaper.jpg: a 16:9 wallpaper with the subject toward the right, moderately bright rather than dark; add "wallpaper": {"image": "wallpaper.jpg", "overlayOpacity": 0.25, "glass": true} at the top level of theme.json, shared by both appearances. If I ask for different wallpapers per appearance, generate wallpaper-light.jpg and wallpaper-dark.jpg instead, skip the top-level wallpaper, and add a wallpaper to light and to dark pointing to each image\n' +
+      "   - logo.png: square, used as the icon in the middle of the new-chat page (not the app icon); just put it in the folder, no need to add it to theme.json\n" +
+      '4. If I attached reference images, pass them to the image generation as input images so the characters and art style match them, and take the colors from them too.\n' +
+      "5. Check that theme.json is valid JSON, then tell me the theme name.\n\n" +
+      'The style I want: ',
+    theme_docs: 'Theme docs',
+    theme_open_dir: 'Open themes folder',
+    theme_import_dialog_title: 'Choose a theme (.zip, theme folder or theme.json)',
+    theme_import_replace_title: 'Replace theme',
+    theme_import_replace_msg: 'A theme named "{name}" already exists. Replace it with the imported one?',
+    theme_import_replace_ok: 'Replace',
+    theme_import_err_no_theme: 'No theme.json found. Check the package layout.',
+    theme_import_err_bad_json: 'theme.json is not valid JSON',
+    theme_import_err_bad_zip: 'Could not read this zip file',
+    theme_import_err_too_large: 'Theme is too large (16MB per file, 64MB in total)',
+    theme_import_err_failed: 'Import failed, please try again',
     menu_language: 'Language',
     menu_website: 'Website',
     menu_docs: 'Documentation',
