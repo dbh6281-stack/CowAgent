@@ -5,11 +5,16 @@
 running. A status file rewritten in place is empty for the duration of the
 write, so a crash — or a reader arriving mid-write — turns a running update into
 an idle one and the guard lets a second update start on top of the first.
+This does not serialize concurrent read-modify-write operations.
 """
 
 import errno
 import json
 import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -63,3 +68,35 @@ def test_the_on_disk_format_is_unchanged(tmp_path):
     assert '\n  "state": "running"' in text
     assert "拉取更新" in text
     assert json.loads(text)["message"] == "拉取更新"
+
+
+@pytest.mark.parametrize("write_status", [False, True])
+def test_installed_cli_imports_without_project_root(tmp_path, write_status):
+    project_root = Path(__file__).resolve().parents[1]
+    installed = tmp_path / "installed"
+    shutil.copytree(project_root / "cli", installed / "cli")
+    script = """
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+assert importlib.util.find_spec("common") is None
+from cli import update_service, utils
+assert "common" not in sys.modules
+if sys.argv[3] == "write":
+    utils.get_project_root = lambda: sys.argv[2]
+    root = Path(sys.argv[1]).parent / "status"
+    update_service.write_update_status({"state": "running"}, str(root))
+    assert json.loads(update_service.status_path(str(root)).read_text())["state"] == "running"
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(installed), str(project_root),
+         "write" if write_status else "import"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr

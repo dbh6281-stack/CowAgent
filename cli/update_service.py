@@ -19,8 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from cli.utils import get_project_root
-from common.atomic_write import write_text_atomic
+from cli.utils import _ensure_project_on_path, get_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +311,9 @@ def read_update_status(root: Optional[str] = None) -> Dict[str, Any]:
 
 
 def write_update_status(payload: Dict[str, Any], root: Optional[str] = None) -> Dict[str, Any]:
+    _ensure_project_on_path()
+    from common.atomic_write import write_text_atomic
+
     path = status_path(root)
     current = read_update_status(root)
     current.update(payload)
