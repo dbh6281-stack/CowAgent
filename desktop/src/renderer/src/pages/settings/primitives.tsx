@@ -281,8 +281,9 @@ export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void
   </button>
 )
 
-export const TextInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props) => (
+export const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => (
   <input
+    ref={ref}
     {...props}
     // Typed text is primary; the placeholder is the dim tertiary color at
     // reduced opacity so it never reads as a real value while filling in fields
@@ -291,7 +292,8 @@ export const TextInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = 
       props.className || ''
     }`}
   />
-)
+))
+TextInput.displayName = 'TextInput'
 
 export const SaveRow: React.FC<{ status: string; onSave: () => void; label?: string }> = ({
   status,

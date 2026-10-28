@@ -59,6 +59,95 @@ export interface ExternalApiState {
   api_key: string
 }
 
+export interface IntegrationsState {
+  public_url: string
+  /** This machine's addresses on the local network, empty while the server only listens locally. */
+  lan_urls: string[]
+  listen: { host: string; port: number }
+  /** The desktop app owns its backend's port. */
+  port_fixed?: boolean
+  local_only: boolean
+  password_set: boolean
+}
+
+export type GuestShareStatus = 'active' | 'unconfirmed' | 'password_missing' | 'disabled' | 'expired'
+
+export interface GuestShareConfig {
+  name?: string
+  welcome?: string
+  suggested_questions?: string[]
+  provider?: string
+  model?: string
+  tools?: string[]
+  skills?: string[]
+  references?: { path: string; note?: string }[]
+  expires_at?: string
+  limits?: { daily_messages?: number; [k: string]: unknown }
+  access?: { password_required?: boolean; allowed_origins?: string[]; [k: string]: unknown }
+  network?: { enabled?: boolean; [k: string]: unknown }
+  branding?: { color?: string; footer_text?: string; footer_url?: string; [k: string]: unknown }
+  [k: string]: unknown
+}
+
+export interface GuestShare {
+  slug: string
+  name: string
+  status: GuestShareStatus
+  share_token: string
+  password_set: boolean
+  disabled: boolean
+  pending: string[]
+  notices: string[]
+  file_config: GuestShareConfig
+  effective_config: GuestShareConfig | null
+  logo_version: number | string
+  /** Only on single-share responses. */
+  raw_config?: GuestShareConfig
+  guest_md?: string
+}
+
+export interface GuestFeature {
+  enabled: boolean
+  web_password_set: boolean
+  serving: boolean
+  reason: string
+}
+
+export interface GuestSharesOverview {
+  feature: GuestFeature
+  shares: GuestShare[]
+  skills: { name: string; description?: string; needs_shell?: boolean }[]
+  references: { path: string; agent?: string; category?: string }[]
+  models: { id: string; label: string | { zh: string; en: string }; models: string[] }[]
+}
+
+export interface GuestLogSession {
+  session_id: string
+  updated_at: number
+  last?: string
+  deleted?: boolean
+}
+
+export interface GuestLogRecord {
+  role: 'user' | 'assistant' | 'event'
+  event?: string
+  ts?: number
+  content?: string
+  error?: string
+  status?: string
+  tokens?: number
+  attachments?: string[]
+  files?: { path?: string; file_name?: string }[]
+  steps?: { type: string; name?: string; is_error?: boolean }[]
+}
+
+/** A failed guest-share call, keeping the backend's reason code. */
+export class ShareApiError extends Error {
+  constructor(message: string, readonly reason: string = '') {
+    super(message)
+  }
+}
+
 export interface UploadResult {
   status: string
   file_path: string
@@ -718,6 +807,103 @@ class ApiClient {
     action: 'enable' | 'disable' | 'regenerate'
   ): Promise<ApiResult & ExternalApiState> {
     return this.request('/api/external_api', { method: 'POST', body: JSON.stringify({ action }) })
+  }
+
+  // ---------------------------------------------------------
+  // Integrations: public address and guest pages
+  // ---------------------------------------------------------
+
+  async getIntegrations(): Promise<ApiResult & IntegrationsState> {
+    return this.request('/api/integrations')
+  }
+
+  async savePublicUrl(publicUrl: string): Promise<ApiResult & IntegrationsState> {
+    return this.request('/api/integrations', { method: 'PUT', body: JSON.stringify({ public_url: publicUrl }) })
+  }
+
+  /** Saves web_host; the server restarts on it right after answering. */
+  async saveListenHost(host: string): Promise<ApiResult & IntegrationsState & { reason?: string }> {
+    return this.request('/api/integrations', { method: 'PUT', body: JSON.stringify({ web_host: host }) })
+  }
+
+  /** Guest pages belong to the instance, not an Agent, and their errors carry a reason code. */
+  private async shareRequest<T>(path: string, method = 'GET', body?: unknown | FormData): Promise<T> {
+    const isForm = body instanceof FormData
+    const res = await fetch(`${this.baseUrl}/api/guest-shares${path}`, {
+      method,
+      credentials: 'include',
+      headers: {
+        ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
+        ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      },
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+    })
+    let data: Record<string, unknown> = {}
+    try {
+      data = await res.json()
+    } catch {
+      /* empty body */
+    }
+    if (!res.ok || data.status === 'error') {
+      throw new ShareApiError(String(data.message || `HTTP ${res.status}`), String(data.reason || ''))
+    }
+    return data as T
+  }
+
+  listGuestShares(): Promise<GuestSharesOverview> {
+    return this.shareRequest('')
+  }
+
+  setGuestSharesEnabled(enabled: boolean): Promise<{ feature: GuestFeature }> {
+    return this.shareRequest('', 'PUT', { enabled })
+  }
+
+  getGuestShare(slug: string): Promise<{ share: GuestShare }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}`)
+  }
+
+  createGuestShare(config: GuestShareConfig, guestMd: string): Promise<{ share: GuestShare }> {
+    return this.shareRequest('', 'POST', { config, guest_md: guestMd })
+  }
+
+  updateGuestShare(slug: string, config: GuestShareConfig, guestMd?: string): Promise<{ share: GuestShare }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}`, 'PUT', guestMd === undefined ? { config } : { config, guest_md: guestMd })
+  }
+
+  deleteGuestShare(slug: string): Promise<ApiResult> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}`, 'DELETE')
+  }
+
+  guestShareAction(
+    slug: string,
+    action: 'confirm' | 'reset-link' | 'revoke' | 'disable' | 'enable' | 'password',
+    body: Record<string, unknown> = {}
+  ): Promise<{ share: GuestShare }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}/${action}`, 'POST', body)
+  }
+
+  uploadGuestShareLogo(slug: string, file: File): Promise<{ share: GuestShare }> {
+    const form = new FormData()
+    form.append('file', file)
+    return this.shareRequest(`/${encodeURIComponent(slug)}/logo`, 'POST', form)
+  }
+
+  deleteGuestShareLogo(slug: string): Promise<{ share: GuestShare }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}/logo`, 'DELETE')
+  }
+
+  guestShareLogoUrl(share: Pick<GuestShare, 'slug' | 'logo_version'>): string {
+    return share.logo_version
+      ? this.withToken(`${this.baseUrl}/api/guest-shares/${encodeURIComponent(share.slug)}/logo?v=${share.logo_version}`)
+      : `${this.baseUrl}/assets/logo.jpg`
+  }
+
+  guestShareLogs(slug: string): Promise<{ sessions: GuestLogSession[] }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}/logs`)
+  }
+
+  guestShareLog(slug: string, sessionId: string): Promise<{ records: GuestLogRecord[] }> {
+    return this.shareRequest(`/${encodeURIComponent(slug)}/logs/${encodeURIComponent(sessionId)}`)
   }
 
   // ---------------------------------------------------------
@@ -1396,8 +1582,8 @@ class ApiClient {
     return this.request('/auth/check')
   }
 
-  async authLogin(password: string): Promise<ApiResult & { token?: string }> {
-    const res = await this.request<ApiResult & { token?: string }>('/auth/login', {
+  async authLogin(password: string): Promise<ApiResult & { token?: string; reason?: string; retry_after?: number }> {
+    const res = await this.request<ApiResult & { token?: string; reason?: string; retry_after?: number }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ password }),
     })

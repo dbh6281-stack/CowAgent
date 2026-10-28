@@ -8,7 +8,6 @@ import { useUIStore } from '../../store/uiStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useSessionSettingsStore } from '../../store/sessionSettingsStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
-import ChatApiCard from './ChatApiCard'
 import { PERMISSION_META, PERMISSION_MODE_ORDER, asPermissionMode } from '../../lib/permission'
 
 const CustomModelPicker = product.models?.ModelPicker
@@ -33,6 +32,8 @@ interface BasicSettingsProps {
   onLangChange?: () => void
   onOpenModels?: () => void
 }
+
+export const PASSWORD_INPUT_ID = 'cfg-password'
 
 const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, onOpenModels }) => {
   const [config, setConfig] = useState<ConfigData | null>(null)
@@ -646,21 +647,21 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
           <Field label={t('config_password')} hint={t('config_password_hint')}>
             <div className="relative">
               <TextInput
+                id={PASSWORD_INPUT_ID}
                 type={pwVisible ? 'text' : 'password'}
                 className="pr-10"
                 value={password}
                 placeholder={t('config_password_placeholder')}
-                onFocus={() => {
-                  // Browser access shows a mask; clear it on focus so the user
-                  // types a fresh password. Desktop holds the real password and
-                  // must stay editable in place (cursor at the end).
-                  if (!hasRealPassword && !pwDirty && MASK_RE.test(password)) setPassword('')
-                }}
-                onBlur={() => {
-                  if (!hasRealPassword && !pwDirty) setPassword(config?.web_password_masked || '')
+                onFocus={(e) => {
+                  const input = e.currentTarget
+                  setTimeout(() => input.setSelectionRange(input.value.length, input.value.length))
                 }}
                 onChange={(e) => {
-                  setPassword(e.target.value)
+                  const value = e.target.value
+                  // Browser access only has a mask, which can only go as a
+                  // whole: deleting empties the field, typing replaces it.
+                  const masked = !hasRealPassword && !pwDirty && MASK_RE.test(password)
+                  setPassword(!masked ? value : value.length < password.length ? '' : value.replace(/[*•]/g, ''))
                   setPwDirty(true)
                 }}
               />
@@ -676,8 +677,6 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
           <SaveRow status={pwStatus} onSave={savePassword} />
         </div>
       </Card>
-
-      <ChatApiCard baseUrl={baseUrl} />
 
       {/* System — language + notification preferences (client-side, no save) */}
       <Card icon={<Settings size={16} />} title={t('config_system')}>

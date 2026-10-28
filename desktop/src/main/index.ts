@@ -535,6 +535,30 @@ async function startBackend() {
   await pythonBackend.start()
 }
 
+// Interfaces VPNs, containers and VMs create; their addresses are not on the
+// network the user's other devices share.
+const VIRTUAL_IFACE_RE = /^(utun|tun|tap|wg|zt|tailscale|docker|br-|veth|vmnet|vboxnet|bridge|llw|awdl|vEthernet)/i
+
+/** This machine's IPv4 addresses on private networks, home ranges first. */
+function listLanAddresses(): string[] {
+  const rank = (ip: string): number => {
+    if (ip.startsWith('192.168.')) return 0
+    if (ip.startsWith('10.')) return 1
+    const m = /^172\.(\d+)\./.exec(ip)
+    return m && Number(m[1]) >= 16 && Number(m[1]) <= 31 ? 2 : -1
+  }
+  const out: string[] = []
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    if (VIRTUAL_IFACE_RE.test(name)) continue
+    for (const a of addrs ?? []) {
+      if (a.family === 'IPv4' && !a.internal && rank(a.address) >= 0 && !out.includes(a.address)) {
+        out.push(a.address)
+      }
+    }
+  }
+  return out.sort((a, b) => rank(a) - rank(b))
+}
+
 function setupIPC() {
   // Await the port decision rather than reading the current guess: the renderer
   // usually asks before startBackend() has probed anything, and a wrong answer
@@ -565,6 +589,8 @@ function setupIPC() {
   ipcMain.handle('get-desktop-token', () => {
     return pythonBackend?.getDesktopToken() ?? ''
   })
+
+  ipcMain.handle('get-lan-addresses', () => listLanAddresses())
 
   ipcMain.handle('restart-backend', async () => {
     await pythonBackend?.restart()

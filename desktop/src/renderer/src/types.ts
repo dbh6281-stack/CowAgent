@@ -19,6 +19,8 @@ export interface ElectronAPI {
   getDesktopToken?: () => Promise<string>
   /** On-disk path of a picked/dropped File; '' when it has none (pasted image). */
   getPathForFile?: (file: File) => string
+  /** This machine's IPv4 addresses on private networks. */
+  getLanAddresses?: () => Promise<string[]>
   restartBackend: () => Promise<boolean>
   selectDirectory: () => Promise<string | null>
   selectFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>
