@@ -34,8 +34,10 @@ def guest_env(tmp_path, monkeypatch):
     monkeypatch.setitem(config.conf(), "guest_share", {"enabled": True})
     monkeypatch.setitem(config.conf(), "web_password", "owner-secret-pass")
     from agent.guest import runtime
+    from channel.web.core import guest_pages
 
     monkeypatch.setattr(runtime, "_service", None)
+    monkeypatch.setattr(guest_pages, "_pages", None)
     root = guests_root()
     try:
         yield tmp_path
@@ -276,10 +278,16 @@ def test_renewing_a_token_keeps_the_visitor_and_needs_no_password(guest_env):
 # --- visitor conversations ---------------------------------------------------
 
 
+def _visitor_of(session_id):
+    return session_id[:store.VISITOR_ID_LEN]
+
+
 def _seed_turn(slug, session_id, question="hello"):
-    store.append_message(slug, session_id, {"role": "user", "content": question, "attachments": []})
+    visitor = _visitor_of(session_id)
+    store.append_message(slug, session_id, {"role": "user", "content": question, "attachments": []},
+                         visitor_id=visitor)
     store.append_message(slug, session_id, {"role": "assistant", "content": "hi", "steps": [], "files": [],
-                                            "tokens": 1, "status": "done"})
+                                            "tokens": 1, "status": "done"}, visitor_id=visitor)
 
 
 def test_visitors_list_only_their_own_conversations(guest_env):
@@ -569,7 +577,7 @@ def test_pausing_and_revoking_cut_off_visitors(guest_env):
     _post(app, "/api/guest-shares/demo/revoke", {}, {"Cookie": cookie})
     assert app.request(base + "/sessions", headers={"X-Guest-Token": token}).status.startswith("401")
     renewed = json.loads(_session(app, share["share_token"], {"token": token}).data)["token"]
-    assert store.verify_token(renewed, "demo", 3600) != store.visitor_of(sid)
+    assert store.verify_token(renewed, "demo", 3600) != _visitor_of(sid)
     listed = json.loads(app.request(base + "/sessions", headers={"X-Guest-Token": renewed}).data)["sessions"]
     assert listed == []
 
@@ -583,7 +591,7 @@ def test_deleting_a_page_removes_its_link_conversations_usage_and_files(guest_en
     share = _create_confirmed(app, cookie)
     token, sid = _visitor(app, share["share_token"])
     _seed_turn("demo", sid)
-    store.add_question("demo", store.visitor_of(sid))
+    store.add_question("demo", _visitor_of(sid))
     work = get_service().guard_for(share_mod.resolve("demo"), sid).work_dir
     assert os.path.isdir(work)
 
@@ -591,7 +599,7 @@ def test_deleting_a_page_removes_its_link_conversations_usage_and_files(guest_en
     assert store.get_entry("demo") is None
     assert store.read_messages("demo", sid) == []
     assert store.list_sessions("demo") == []
-    assert store.questions_today("demo", store.visitor_of(sid)) == 0
+    assert store.questions_today("demo", _visitor_of(sid)) == 0
     assert not os.path.exists(work)
     assert app.request(f"/share/{share['share_token']}").status.startswith("404")
 
@@ -825,6 +833,7 @@ def test_a_visitor_turn_runs_confined_tools_end_to_end(guest_env, monkeypatch):
     import bridge.agent_bridge as agent_bridge
     from agent.guest import share as share_mod
     from agent.guest.runtime import get_service
+    from channel.web.core.guest_pages import get_pages
 
     owner_file = guest_env / "owner-notes.md"
     owner_file.write_text("OWNER-SECRET")
@@ -841,11 +850,11 @@ def test_a_visitor_turn_runs_confined_tools_end_to_end(guest_env, monkeypatch):
     token, sid = _visitor(app, share["share_token"])
     visitor = store.verify_token(token, "demo", 3600)
     state = share_mod.resolve("demo")
-    service = get_service()
-    request_id = service.start(state, visitor, sid, "make me a report", [])
-    run = service.get_run(request_id, "demo", sid)
+    service, pages = get_service(), get_pages()
+    request_id = pages.start(state, visitor, sid, "make me a report", [])
+    run = pages.get_run(request_id, "demo", sid)
     events = [json.loads(chunk.decode().split("data: ", 1)[1])
-              for chunk in service.stream(run, 0) if b"data: " in chunk]
+              for chunk in pages.stream(run, 0) if b"data: " in chunk]
 
     kinds = [e["type"] for e in events]
     assert kinds[-1] == "stream_end" and "done" in kinds
@@ -877,12 +886,51 @@ def test_a_visitor_turn_runs_confined_tools_end_to_end(guest_env, monkeypatch):
     assert log[1]["files"][0]["path"] == "/work/report.md"
     assert [s["name"] for s in log[1]["steps"] if s["type"] == "tool"] == ["read", "write", "send"]
 
-    history = service.history(state, sid)
+    history = pages.history(state, sid)
     reply = history["messages"][1]
     assert reply["files"][0]["url"].startswith(file_url_prefix)
     assert len(reply["steps"]) == 3
     assert history["links"]["/work/report.md"].startswith(file_url_prefix)
     assert history["active_request_id"] is None
+
+
+def test_a_turn_runs_without_the_web_pages(guest_env, monkeypatch):
+    """What a chat channel would do: name its own visitor and conversation,
+    and get the reply and its files back instead of a stream of links."""
+    import bridge.agent_bridge as agent_bridge
+    from agent.guest import share as share_mod
+    from agent.guest.runtime import GuestError, get_service
+
+    model = _ScriptedModel([
+        ("tool", "write", {"path": "notes.md", "content": "hi"}),
+        ("tool", "send", {"path": "notes.md"}),
+        ("text", "Sent."),
+    ])
+    monkeypatch.setattr(agent_bridge, "AgentLLMModel", lambda *a, **k: model)
+    app = _app()
+    _create_confirmed(app, _owner_cookie(app))
+    state = share_mod.resolve("demo")
+    service = get_service()
+
+    upload = service.save_upload(state, "im-chat-1", "../../a b.png", b"x")
+    assert upload == "/work/uploads/a b.png"
+    events = []
+    result = service.run_turn(state, "im-user-1", "im-chat-1", "write notes", [upload], on_event=events.append)
+    assert result.status == "done" and not result.failed and result.content == "Sent."
+    assert [f["path"] for f in result.files] == ["/work/notes.md"]
+    assert [e for e in events if e["type"] == "file"][0].get("url") is None
+    with open(service.local_file(state, "im-chat-1", "/work/notes.md")) as f:
+        assert f.read() == "hi"
+    assert service.local_file(state, "im-chat-1", "/work/../../guest.db") is None
+    assert store.read_messages("demo", "im-chat-1")[0]["attachments"] == [upload]
+    assert store.questions_today("demo", "im-user-1") == 1
+    assert [s["session_id"] for s in store.visitor_sessions("demo", "im-user-1")] == ["im-chat-1"]
+    assert service.active_turn("demo", "im-chat-1") is None
+
+    for visitor, sid in (("im-user-1", "../escape"), ("../escape", "im-chat-2")):
+        with pytest.raises(GuestError) as err:
+            service.run_turn(state, visitor, sid, "hi")
+        assert err.value.code == 400
 
 
 # --- files and network -------------------------------------------------------
@@ -894,12 +942,13 @@ def test_sent_html_is_served_as_a_download(guest_env):
     _token, sid = _visitor(app, share["share_token"])
     from agent.guest import share as share_mod
     from agent.guest.runtime import get_service
+    from channel.web.core.guest_pages import file_url
 
     state = share_mod.resolve("demo")
     work = get_service().guard_for(state, sid).work_dir
     with open(os.path.join(work, "page.html"), "w") as f:
         f.write("<script>alert(1)</script>")
-    url = get_service().file_url(share["share_token"], "demo", sid, "/work/page.html")
+    url = file_url(share["share_token"], "demo", sid, "/work/page.html")
     res = app.request(url)
     assert res.status.startswith("200")
     assert res.headers["Content-Disposition"].startswith("attachment")

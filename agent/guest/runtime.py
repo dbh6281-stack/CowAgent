@@ -1,4 +1,4 @@
-"""Running visitor conversations.
+"""Running visitor conversations, whatever front end the visitor came through.
 
 Deliberately not routed through ``AgentBridge.agent_reply``. That path serves
 the owner: it resolves the owner's Agent, restores the owner's transcript,
@@ -7,6 +7,14 @@ self-evolution, and builds the prompt from the owner's workspace. A visitor
 needs none of it, and every one of those is a way to leak or to poison. The
 guest path builds its own Agent from explicit inputs, keeps its transcript in
 the guest share store, and shares only the model adapter with the owner.
+
+A front end authenticates its visitors and names the profile, the visitor and
+the conversation; everything after that happens here, the same for every
+front end. A turn is ``begin`` (checks and reserves, so a refusal comes back
+before anything runs) then ``execute`` (runs to the end and returns the
+reply). Progress is reported as plain events and files by their virtual path:
+streaming them, linking files or sending them as messages is the front end's
+job.
 """
 
 from __future__ import annotations
@@ -22,31 +30,31 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Deque, Dict, Iterator, List, Optional, Tuple
-from urllib.parse import quote
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Tuple
 
 from agent.guest import policy, store
-from agent.guest.paths import PathGuard
+from agent.guest.paths import GuestPathError, PathGuard
 from agent.guest.share import ShareState
 from agent.guest.tools import build_guest_tools
 from agent.protocol.agent import Agent
 from agent.tools.base_tool import is_tool_available
 from common.log import logger
 
-MAX_RUN_EVENTS = 4000
-RUN_RETENTION_SECONDS = 15 * 60
 AGENT_IDLE_SECONDS = 60 * 60
 RESTORE_TURNS = 10
 MAX_CONCURRENT_RUNS_PER_PROFILE = 4
-FILE_LINK_TTL = 24 * 3600
 # Same budget the console's stream gives a tool result.
 MAX_TOOL_RESULT_CHARS = 2000
 _CANCEL_MARKER_RE = re.compile(r"_\(Cancelled(?: by user)?\)_")
-_VPATH_RE = re.compile(r"/(?:work|data|skills)/[^\s)\"'<>\]`*]+")
+# Visitor and conversation ids become directory names and database keys.
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_SAFE_NAME_RE = re.compile(r"[^\w.\- ()\u4e00-\u9fff]+")
+
+EventSink = Callable[[Dict[str, Any]], None]
 
 
 class GuestError(Exception):
-    """A request the guest endpoints refuse. ``code`` is the HTTP status."""
+    """A request the guest runtime refuses. ``code`` follows HTTP statuses."""
 
     def __init__(self, code: int, message: str, reason: str = ""):
         super().__init__(message)
@@ -104,26 +112,40 @@ class GuestAgent(Agent):
 
 
 @dataclass
-class GuestRun:
-    request_id: str
-    slug: str
-    session_id: str
-    cancel_event: threading.Event = field(default_factory=threading.Event)
-    events: List[Dict[str, Any]] = field(default_factory=list)
-    cond: threading.Condition = field(default_factory=threading.Condition)
-    finished: bool = False
-    finished_at: float = 0.0
+class GuestTurn:
+    """One visitor message, from ``begin`` until ``execute`` returns."""
 
-    def publish(self, event: Dict[str, Any]) -> None:
-        with self.cond:
-            if len(self.events) >= MAX_RUN_EVENTS and event.get("type") == "delta":
-                return
-            event = dict(event, seq=len(self.events) + 1)
-            self.events.append(event)
-            if event.get("type") == "stream_end":
-                self.finished = True
-                self.finished_at = time.time()
-            self.cond.notify_all()
+    id: str
+    state: ShareState
+    visitor_id: str
+    session_id: str
+    message: str
+    agent: GuestAgent
+    guard: PathGuard
+    timeout: int
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+    finished: bool = False
+
+    @property
+    def slug(self) -> str:
+        return self.state.slug
+
+
+@dataclass
+class TurnResult:
+    """``status`` is done, cancelled or failed. ``files`` are the files the
+    reply handed to the visitor, by virtual path."""
+
+    content: str
+    status: str
+    files: List[Dict[str, Any]]
+    steps: List[Dict[str, Any]]
+    tokens: int
+    error: str = ""
+
+    @property
+    def failed(self) -> bool:
+        return self.status == "failed" or bool(self.error and not self.content.strip())
 
 
 @dataclass
@@ -145,8 +167,12 @@ class GuestSession:
     guard: Optional[PathGuard] = None
     turns: int = 0
     last_active: float = field(default_factory=time.time)
-    active_run: Optional[str] = None
+    turn: Optional[GuestTurn] = None
     requests: Deque[float] = field(default_factory=deque)
+
+    @property
+    def busy(self) -> bool:
+        return self.turn is not None and not self.turn.finished
 
 
 _SCRIPT_EXTS = frozenset({".py", ".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".php",
@@ -296,17 +322,22 @@ def _apply_model(model, cfg: Dict[str, Any]) -> None:
         model.set_agent_default(cfg.get("provider") or None, cfg["model"])
 
 
+def _check_id(value: str, what: str) -> None:
+    if not isinstance(value, str) or not _ID_RE.match(value):
+        raise GuestError(400, f"Invalid {what}.", f"invalid_{what.replace(' ', '_')}")
+
+
 class GuestService:
     def __init__(self):
         self._lock = threading.RLock()
         self._sessions: Dict[Tuple[str, str], GuestSession] = {}
-        self._runs: Dict[str, GuestRun] = {}
-        self._ip_hits: Dict[str, Deque[float]] = {}
+        self._turns: Dict[str, GuestTurn] = {}
         self._janitor_started = False
 
     # --- sessions ------------------------------------------------------------
 
     def work_dir(self, slug: str, session_id: str) -> str:
+        _check_id(session_id, "session id")
         path = os.path.join(store.sessions_dir(slug), session_id)
         os.makedirs(os.path.join(path, "uploads"), exist_ok=True)
         return path
@@ -404,17 +435,6 @@ class GuestService:
 
     # --- limits --------------------------------------------------------------
 
-    def allow_ip(self, ip: str, limit: int, window: float = 60.0) -> bool:
-        now = time.time()
-        with self._lock:
-            hits = self._ip_hits.setdefault(ip, deque())
-            while hits and now - hits[0] > window:
-                hits.popleft()
-            if len(hits) >= limit:
-                return False
-            hits.append(now)
-            return True
-
     def _check_limits(self, state: ShareState, session: GuestSession, visitor_id: str) -> None:
         limits = state.effective.get("limits") or {}
         now = time.time()
@@ -431,15 +451,23 @@ class GuestService:
         if questions and store.questions_today(state.slug, visitor_id) >= questions:
             raise GuestError(429, "You have reached today's question limit. Please come back tomorrow.",
                              "visitor_quota")
-        running = sum(1 for r in self._runs.values() if r.slug == state.slug and not r.finished)
+        running = sum(1 for t in self._turns.values() if t.slug == state.slug)
         if running >= MAX_CONCURRENT_RUNS_PER_PROFILE:
             raise GuestError(429, "The assistant is busy right now, please retry shortly.", "busy")
 
-    # --- runs ----------------------------------------------------------------
+    # --- turns ---------------------------------------------------------------
 
-    def start(self, state: ShareState, visitor_id: str, session_id: str, text: str,
-              attachments: List[str]) -> str:
+    def begin(self, state: ShareState, visitor_id: str, session_id: str, text: str,
+              attachments: Iterable[str] = ()) -> GuestTurn:
+        """Check and reserve a turn, and record the visitor's message.
+        ``attachments`` are virtual paths in the conversation's own files.
+        Every turn begun must be passed to ``execute``."""
+        if not state.active:
+            raise GuestError(403, "This page is not available right now.", state.status)
+        _check_id(visitor_id, "visitor id")
+        _check_id(session_id, "session id")
         text = (text or "").strip()
+        attachments = list(attachments or [])
         if not text and not attachments:
             raise GuestError(400, "Message is empty.")
         if len(text) > 20000:
@@ -447,8 +475,7 @@ class GuestService:
         self._ensure_janitor()
         with self._lock:
             session = self._session(state.slug, session_id)
-            current = self._runs.get(session.active_run or "")
-            if current is not None and not current.finished:
+            if session.busy:
                 raise GuestError(409, "A reply is still in progress.", "busy")
             self._check_limits(state, session, visitor_id)
             agent = self._prepare_agent(state, session)
@@ -464,118 +491,105 @@ class GuestService:
             session.requests.append(time.time())
             session.turns += 1
             store.add_question(state.slug, visitor_id)
-            run = GuestRun(request_id=uuid.uuid4().hex, slug=state.slug, session_id=session_id)
-            self._runs[run.request_id] = run
-            session.active_run = run.request_id
+            message = text
+            if vpaths:
+                listing = "\n".join(f"- {p}" for p in vpaths)
+                message = f"{text}\n\n[Uploaded files]\n{listing}".strip()
+            turn = GuestTurn(
+                id=uuid.uuid4().hex, state=state, visitor_id=visitor_id, session_id=session_id,
+                message=message, agent=agent, guard=guard,
+                timeout=int((state.effective.get("limits") or {}).get("run_timeout_seconds") or 300),
+            )
+            self._turns[turn.id] = turn
+            session.turn = turn
+        try:
+            store.append_message(state.slug, session_id, {"role": "user", "content": text, "attachments": vpaths},
+                                 visitor_id=visitor_id)
+        except Exception:
+            self._release(turn)
+            raise
+        return turn
 
-        message = text
-        if vpaths:
-            listing = "\n".join(f"- {p}" for p in vpaths)
-            message = f"{text}\n\n[Uploaded files]\n{listing}".strip()
-        store.append_message(state.slug, session_id, {"role": "user", "content": text, "attachments": vpaths})
-        timeout = int((state.effective.get("limits") or {}).get("run_timeout_seconds") or 300)
-        thread = threading.Thread(
-            target=self._run, args=(state, session, agent, run, message, timeout),
-            name=f"guest-run-{state.slug}", daemon=True,
-        )
-        thread.start()
-        return run.request_id
+    def execute(self, turn: GuestTurn, on_event: Optional[EventSink] = None) -> TurnResult:
+        """Run a turn to the end, store the reply and return it. Blocks for
+        as long as the Agent works; ``on_event`` sees its progress."""
+        try:
+            return self._execute(turn, on_event)
+        finally:
+            self._release(turn)
 
-    def _run(self, state: ShareState, session: GuestSession, agent: GuestAgent,
-             run: GuestRun, message: str, timeout: int) -> None:
+    def _release(self, turn: GuestTurn) -> None:
+        with self._lock:
+            turn.finished = True
+            self._turns.pop(turn.id, None)
+            session = self._sessions.get((turn.slug, turn.session_id))
+            if session is not None:
+                session.last_active = time.time()
+
+    def run_turn(self, state: ShareState, visitor_id: str, session_id: str, text: str,
+                 attachments: Iterable[str] = (), on_event: Optional[EventSink] = None) -> TurnResult:
+        """``begin`` and ``execute`` in one call, for front ends that wait."""
+        return self.execute(self.begin(state, visitor_id, session_id, text, attachments), on_event)
+
+    def _execute(self, turn: GuestTurn, on_event: Optional[EventSink]) -> TurnResult:
         trace = _Trace()
         errors: List[str] = []
-        on_event = self._translator(state, session, run, trace, errors)
-        timer = threading.Timer(timeout, run.cancel_event.set)
+        timer = threading.Timer(turn.timeout, turn.cancel_event.set)
         timer.daemon = True
         timer.start()
         response = ""
         status = "done"
         try:
-            response = agent.run_stream(user_message=message, on_event=on_event, cancel_event=run.cancel_event)
+            response = turn.agent.run_stream(user_message=turn.message,
+                                             on_event=self._tracker(turn, trace, errors, on_event),
+                                             cancel_event=turn.cancel_event)
         except Exception as e:
             status = "failed"
             errors.append(str(e))
-            logger.warning(f"[GuestShare] Run failed for {state.slug}/{session.session_id}: {e}")
+            logger.warning(f"[GuestShare] Run failed for {turn.slug}/{turn.session_id}: {e}")
         finally:
             timer.cancel()
-        if run.cancel_event.is_set() and status == "done":
+        if turn.cancel_event.is_set() and status == "done":
             status = "cancelled"
 
-        tokens = 0
-        executor = getattr(agent, "stream_executor", None)
+        executor = getattr(turn.agent, "stream_executor", None)
         usage = getattr(executor, "run_usage", None) or {}
         tokens = int(usage.get("total_tokens") or 0)
         if not tokens:
-            tokens = max(1, (len(message) + len(response or "")) // 2)
-        store.add_tokens(state.slug, store.visitor_of(session.session_id), tokens)
+            tokens = max(1, (len(turn.message) + len(response or "")) // 2)
+        store.add_tokens(turn.slug, turn.visitor_id, tokens)
 
-        guard = session.guard
-        reply = guard.to_virtual(response or "") if guard else (response or "")
+        reply = turn.guard.to_virtual(response or "")
         if status == "cancelled":
-            # The stop marker is for the model's history; the page has its own.
+            # The stop marker is for the model's history; front ends show their own.
             reply = _CANCEL_MARKER_RE.sub("", reply).strip() or trace.text.strip()
+        result = TurnResult(content=reply, status=status, files=trace.files, steps=trace.steps,
+                            tokens=tokens, error=errors[0][:2000] if errors else "")
         record = {"role": "assistant", "content": reply, "steps": trace.steps, "files": trace.files,
                   "tokens": tokens, "status": status}
-        if errors:
-            record["error"] = errors[0][:2000]
-        store.append_message(state.slug, session.session_id, record)
+        if result.error:
+            record["error"] = result.error
+        store.append_message(turn.slug, turn.session_id, record, visitor_id=turn.visitor_id)
+        return result
 
-        if status == "cancelled":
-            run.publish({"type": "cancelled"})
-        if status == "failed" or (errors and not reply.strip()):
-            run.publish({"type": "error", "reason": "run_failed"})
-        else:
-            links = self._links(state, session.session_id, guard, [reply] + [
-                s.get("content") or "" for s in trace.steps if s.get("type") == "content"
-            ])
-            run.publish({"type": "done", "content": reply, "status": status, "links": links,
-                         "timestamp": time.time()})
-        run.publish({"type": "stream_end"})
-        session.last_active = time.time()
-
-    def _links(self, state: ShareState, session_id: str, guard: Optional[PathGuard],
-               texts: List[str]) -> Dict[str, str]:
-        """Signed URLs for the visitor-visible files a reply mentions, so an
-        inline ``![chart](/work/chart.png)`` or a link to a file renders."""
-        if guard is None:
-            return {}
-        links: Dict[str, str] = {}
-        for text in texts:
-            for match in _VPATH_RE.finditer(text or ""):
-                vpath = match.group(0).rstrip(".,;:!?")
-                if vpath in links or len(links) >= 50:
-                    continue
-                try:
-                    real = guard.resolve(vpath)
-                except Exception:
-                    continue
-                if os.path.isfile(real):
-                    links[vpath] = self.file_url(state.share_token, state.slug, session_id, vpath)
-        return links
-
-    def active_request(self, slug: str, session_id: str) -> Optional[str]:
-        with self._lock:
-            session = self._sessions.get((slug, session_id))
-            run = self._runs.get(session.active_run or "") if session else None
-            return run.request_id if run is not None and not run.finished else None
-
-    def file_url(self, share_token: str, slug: str, session_id: str, vpath: str) -> str:
-        expires = int(time.time()) + FILE_LINK_TTL
-        sig = store.sign_file(slug, session_id, vpath, expires)
-        return (f"/share/{share_token}/api/file?sid={session_id}&path={quote(vpath)}"
-                f"&exp={expires}&sig={sig}")
-
-    def _translator(self, state: ShareState, session: GuestSession, run: GuestRun,
-                    trace: "_Trace", errors: List[str]) -> Callable[[Dict[str, Any]], None]:
-        """Agent events -> the console's stream events, so the guest page renders
-        a reply the way the console does. Reasoning is not forwarded, and every
+    def _tracker(self, turn: GuestTurn, trace: "_Trace", errors: List[str],
+                 on_event: Optional[EventSink]) -> EventSink:
+        """Agent events -> the turn's trace and plain progress events, the
+        shape the console's stream uses. Reasoning is not passed on, and every
         path in tool arguments and results is turned into its virtual form."""
-        guard = session.guard
+        guard = turn.guard
+
+        def emit(event: Dict[str, Any]) -> None:
+            if on_event is None:
+                return
+            try:
+                on_event(event)
+            except Exception as e:
+                logger.warning(f"[GuestShare] Event handler failed: {e}")
 
         def virtual(value: Any) -> Any:
             if isinstance(value, str):
-                return guard.to_virtual(value) if guard else value
+                return guard.to_virtual(value)
             if isinstance(value, dict):
                 return {k: virtual(v) for k, v in value.items()}
             if isinstance(value, list):
@@ -587,10 +601,10 @@ class GuestService:
                 return json.dumps(value, ensure_ascii=False)
             return "" if value is None else str(value)
 
-        def publish_file(raw_path: str, file_type: str, file_name: Optional[str] = None) -> None:
-            """A file card for a file the visitor may download: sent with
-            ``send``, or written under /work this turn."""
-            if guard is None or not raw_path:
+        def add_file(raw_path: str, file_type: str, file_name: Optional[str] = None) -> None:
+            """A file the visitor may download: sent with ``send``, or written
+            under /work this turn."""
+            if not raw_path:
                 return
             try:
                 real = guard.resolve(raw_path)
@@ -606,29 +620,28 @@ class GuestService:
             item = {"file_name": file_name or os.path.basename(real), "path": vpath,
                     "file_type": file_type, "size": os.path.getsize(real)}
             trace.files.append(item)
-            run.publish(dict(item, type="file",
-                             url=self.file_url(state.share_token, state.slug, session.session_id, vpath)))
+            emit(dict(item, type="file"))
 
-        def on_event(event: Dict[str, Any]) -> None:
+        def on_agent_event(event: Dict[str, Any]) -> None:
             kind = event.get("type")
             data = event.get("data") or {}
             if kind == "message_update":
                 delta = data.get("delta") or ""
                 if delta:
                     trace.text += delta
-                    run.publish({"type": "delta", "content": delta})
+                    emit({"type": "delta", "content": delta})
             elif kind == "message_end":
                 if data.get("tool_calls"):
                     text = virtual(trace.text.strip())
                     if text:
                         trace.steps.append({"type": "content", "content": text})
                     trace.text = ""
-                    run.publish({"type": "message_end", "has_tool_calls": True})
+                    emit({"type": "message_end", "has_tool_calls": True})
             elif kind == "tool_execution_start":
                 trace.text = ""
                 arguments = virtual(data.get("arguments") or {})
                 trace.arguments[data.get("tool_call_id")] = arguments
-                run.publish({
+                emit({
                     "type": "tool_start",
                     "tool_call_id": data.get("tool_call_id"),
                     "tool": data.get("tool_name") or "tool",
@@ -650,7 +663,7 @@ class GuestService:
                     "is_error": not ok,
                     "execution_time": exec_time,
                 })
-                run.publish({
+                emit({
                     "type": "tool_end",
                     "tool_call_id": data.get("tool_call_id"),
                     "tool": name,
@@ -659,61 +672,36 @@ class GuestService:
                     "execution_time": exec_time,
                 })
                 if ok and name in ("write", "edit"):
-                    publish_file(str((arguments or {}).get("path") or ""), "file")
+                    add_file(str((arguments or {}).get("path") or ""), "file")
             elif kind == "file_to_send":
-                publish_file(str(data.get("path") or ""), data.get("file_type") or "file",
-                             data.get("file_name"))
+                add_file(str(data.get("path") or ""), data.get("file_type") or "file", data.get("file_name"))
             elif kind == "error":
                 errors.append(str(data.get("error") or "error"))
 
-        return on_event
+        return on_agent_event
 
-    def get_run(self, request_id: str, slug: str, session_id: str) -> Optional[GuestRun]:
-        run = self._runs.get(request_id)
-        if run is None or run.slug != slug or run.session_id != session_id:
-            return None
-        return run
-
-    def stream(self, run: GuestRun, after: int = 0, idle_timeout: float = 600) -> Iterator[bytes]:
-        cursor = max(0, int(after or 0))
-        deadline = time.time() + idle_timeout
-        while time.time() < deadline:
-            with run.cond:
-                pending = run.events[cursor:]
-                if not pending and not run.finished:
-                    run.cond.wait(timeout=15)
-                    pending = run.events[cursor:]
-            if not pending:
-                if run.finished:
-                    return
-                yield b": keepalive\n\n"
-                continue
-            for event in pending:
-                cursor = event["seq"]
-                deadline = time.time() + idle_timeout
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
-                if event.get("type") == "stream_end":
-                    return
+    def active_turn(self, slug: str, session_id: str) -> Optional[str]:
+        with self._lock:
+            session = self._sessions.get((slug, session_id))
+            return session.turn.id if session is not None and session.busy else None
 
     def cancel(self, slug: str, session_id: str) -> bool:
         with self._lock:
             session = self._sessions.get((slug, session_id))
-            if not session or not session.active_run:
+            if session is None or not session.busy:
                 return False
-            run = self._runs.get(session.active_run)
-        if run is None or run.finished:
-            return False
-        run.cancel_event.set()
-        return True
+            session.turn.cancel_event.set()
+            return True
 
-    def clear_context(self, state: ShareState, session_id: str) -> None:
-        """Start the model afresh; the page keeps showing what came before."""
+    def clear_context(self, state: ShareState, visitor_id: str, session_id: str) -> None:
+        """Start the model afresh; the transcript keeps what came before."""
+        _check_id(session_id, "session id")
         with self._lock:
             session = self._session(state.slug, session_id)
-            current = self._runs.get(session.active_run or "")
-            if current is not None and not current.finished:
+            if session.busy:
                 raise GuestError(409, "A reply is still in progress.", "busy")
-            store.append_message(state.slug, session_id, {"role": "event", "event": store.EVENT_CLEAR})
+            store.append_message(state.slug, session_id, {"role": "event", "event": store.EVENT_CLEAR},
+                                 visitor_id=visitor_id)
             session.turns = 0
             if session.agent is not None:
                 session.agent.messages = []
@@ -721,54 +709,45 @@ class GuestService:
     def delete_session(self, state: ShareState, session_id: str) -> None:
         """Hide a conversation from its visitor and drop its files. The
         transcript stays for the owner, marked as deleted."""
+        _check_id(session_id, "session id")
         with self._lock:
             session = self._sessions.pop((state.slug, session_id), None)
-            if session and session.active_run in self._runs:
-                self._runs[session.active_run].cancel_event.set()
+            if session is not None and session.busy:
+                session.turn.cancel_event.set()
         store.mark_deleted(state.slug, session_id)
         shutil.rmtree(os.path.join(store.sessions_dir(state.slug), session_id), ignore_errors=True)
 
-    def history(self, state: ShareState, session_id: str) -> Dict[str, Any]:
-        """The transcript in the shape the page renders, with fresh file links."""
+    # --- files ---------------------------------------------------------------
+
+    def save_upload(self, state: ShareState, session_id: str, name: str, content: bytes) -> str:
+        """Keep a file the visitor sent under /work/uploads and return its
+        virtual path, which ``begin`` then takes as an attachment."""
+        limits = (state.effective or {}).get("limits") or {}
+        if len(content) > int(limits.get("max_upload_mb") or 20) * 1024 * 1024:
+            raise GuestError(413, "File is too large.", "too_large")
         guard = self.guard_for(state, session_id)
+        if guard.work_usage_bytes() + len(content) > int(limits.get("max_work_mb") or 200) * 1024 * 1024:
+            raise GuestError(413, "This conversation's storage is full.", "storage_full")
+        name = _SAFE_NAME_RE.sub("_", os.path.basename(str(name or "").replace("\\", "/"))).strip(" .") or "file"
+        name = name[-120:]
+        uploads = os.path.join(guard.work_dir, "uploads")
+        os.makedirs(uploads, exist_ok=True)
+        stem, ext = os.path.splitext(name)
+        target, n = os.path.join(uploads, name), 1
+        while os.path.exists(target):
+            target = os.path.join(uploads, f"{stem}_{n}{ext}")
+            n += 1
+        with open(target, "wb") as f:
+            f.write(content)
+        return guard.virtual_of(target)
 
-        def link(vpath: str) -> str:
-            return self.file_url(state.share_token, state.slug, session_id, vpath)
-
-        messages = []
-        texts: List[str] = []
-        for record in store.read_messages(state.slug, session_id):
-            role = record.get("role")
-            if role == "event" and record.get("event") == store.EVENT_CLEAR:
-                messages.append({"role": "event", "event": store.EVENT_CLEAR, "ts": record.get("ts")})
-                continue
-            if role not in ("user", "assistant"):
-                continue
-            item = {"role": role, "content": record.get("content") or "", "ts": record.get("ts")}
-            if role == "assistant":
-                item["steps"] = record.get("steps") or []
-                item["status"] = record.get("status") or "done"
-                item["files"] = [
-                    dict(f, file_name=f.get("file_name") or f.get("name") or os.path.basename(f["path"]),
-                         url=link(f["path"]))
-                    for f in record.get("files") or [] if str(f.get("path") or "").startswith("/")
-                ]
-                texts.append(item["content"])
-                texts.extend(s.get("content") or "" for s in item["steps"] if s.get("type") == "content")
-            else:
-                attachments = []
-                for vpath in record.get("attachments") or []:
-                    is_image = (mimetypes.guess_type(vpath)[0] or "").startswith("image/")
-                    attachments.append({"file_name": os.path.basename(vpath),
-                                        "file_type": "image" if is_image else "file",
-                                        "url": link(vpath)})
-                item["attachments"] = attachments
-            messages.append(item)
-        return {
-            "messages": messages,
-            "links": self._links(state, session_id, guard, texts),
-            "active_request_id": self.active_request(state.slug, session_id),
-        }
+    def local_file(self, state: ShareState, session_id: str, vpath: str) -> Optional[str]:
+        """Where a file the conversation may see is on disk, or None."""
+        try:
+            real = self.guard_for(state, session_id).resolve(vpath)
+        except GuestPathError:
+            return None
+        return real if os.path.isfile(real) else None
 
     # --- housekeeping --------------------------------------------------------
 
@@ -777,8 +756,8 @@ class GuestService:
         with self._lock:
             for key in [k for k in self._sessions if k[0] == slug]:
                 session = self._sessions.pop(key)
-                if session.active_run and session.active_run in self._runs:
-                    self._runs[session.active_run].cancel_event.set()
+                if session.busy:
+                    session.turn.cancel_event.set()
 
     def _ensure_janitor(self) -> None:
         with self._lock:
@@ -798,12 +777,8 @@ class GuestService:
     def sweep(self, now: Optional[float] = None) -> None:
         now = now or time.time()
         with self._lock:
-            for request_id, run in list(self._runs.items()):
-                if run.finished and now - run.finished_at > RUN_RETENTION_SECONDS:
-                    del self._runs[request_id]
             for key, session in list(self._sessions.items()):
-                running = session.active_run in self._runs and not self._runs[session.active_run].finished
-                if not running and now - session.last_active > AGENT_IDLE_SECONDS:
+                if not session.busy and now - session.last_active > AGENT_IDLE_SECONDS:
                     del self._sessions[key]
         self._sweep_work_dirs(now)
 

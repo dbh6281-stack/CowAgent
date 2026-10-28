@@ -22,8 +22,9 @@ Visitor tokens are stateless and signed over the profile's share token,
 password hash and epoch, so resetting the link, changing the password or
 revoking sessions invalidates every token issued before.
 
-A token names a visitor, not a conversation. A visitor's session ids start
-with their visitor id, so owning a session is a prefix check.
+A token names a visitor, not a conversation. Session ids issued here start
+with the visitor id, so owning one is a prefix check. Front ends that name
+conversations their own way pass the visitor id with each record instead.
 """
 
 from __future__ import annotations
@@ -385,10 +386,6 @@ def owns_session(visitor_id: str, session_id: str) -> bool:
     )
 
 
-def visitor_of(session_id: str) -> str:
-    return session_id[:VISITOR_ID_LEN]
-
-
 def issue_token(slug: str, visitor_id: str) -> str:
     entry = get_entry(slug)
     if not entry:
@@ -514,7 +511,7 @@ def _session_row(conn: sqlite3.Connection, slug: str, session_id: str) -> Option
     ).fetchone()
 
 
-def append_message(slug: str, session_id: str, record: Dict[str, Any]) -> None:
+def append_message(slug: str, session_id: str, record: Dict[str, Any], *, visitor_id: str) -> None:
     """Add one transcript record; the first one also opens the conversation."""
     record = dict(record)
     ts = float(record.pop("ts", None) or time.time())
@@ -533,7 +530,7 @@ def append_message(slug: str, session_id: str, record: Dict[str, Any]) -> None:
             conn.execute(
                 "INSERT INTO guest_sessions (slug, session_id, visitor_id, title, last_question, questions,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (slug, session_id, visitor_of(session_id), _one_line(content, _TITLE_LEN) if asked else "",
+                (slug, session_id, visitor_id, _one_line(content, _TITLE_LEN) if asked else "",
                  _one_line(content, 200) if asked else "", 1 if asked else 0, ts, ts),
             )
         elif asked:
@@ -605,7 +602,7 @@ def visitor_sessions(slug: str, visitor_id: str, limit: int = 100) -> List[Dict[
             " ORDER BY updated_at DESC LIMIT ?", (slug, visitor_id, int(limit)),
         ).fetchall()
     return [{"session_id": r["session_id"], "title": r["title"], "updated_at": r["updated_at"],
-             "created_at": r["created_at"]} for r in rows if owns_session(visitor_id, r["session_id"])]
+             "created_at": r["created_at"]} for r in rows]
 
 
 def list_sessions(slug: str, limit: int = 200) -> List[Dict[str, Any]]:

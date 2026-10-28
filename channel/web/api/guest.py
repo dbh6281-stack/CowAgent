@@ -19,7 +19,6 @@ a probe learns nothing about which profiles exist.
 import json
 import mimetypes
 import os
-import re
 import tempfile
 from urllib.parse import parse_qs, quote
 
@@ -29,7 +28,6 @@ from agent.guest import branding
 from agent.guest import share as share_mod
 from agent.guest import store
 from agent.guest.access import login_limiter
-from agent.guest.paths import GuestPathError
 from agent.guest.profile import (
     DATA_DIR,
     delete_profile,
@@ -41,6 +39,7 @@ from agent.guest.profile import (
 )
 from agent.guest.runtime import GuestError, available_skills, get_service, reference_suggestions
 from channel.web.core import template
+from channel.web.core.guest_pages import file_url, get_pages
 from channel.web.core._common import (
     _first_value,
     _multipart_lists,
@@ -55,7 +54,6 @@ TOKEN_HEADER = "HTTP_X_GUEST_TOKEN"
 # above all - is forced to download: it was written by a visitor's Agent and
 # would otherwise run script on the console's origin.
 _INLINE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
-_SAFE_NAME_RE = re.compile(r"[^\w.\- ()\u4e00-\u9fff]+")
 
 
 def _json(data, status: str = None):
@@ -255,9 +253,8 @@ class GuestSessionHandler:
 
     def POST(self, share_token):
         state = _load_share(share_token)
-        service = get_service()
         client = _client_ip()
-        if not service.allow_ip(f"session:{client}", 30):
+        if not get_pages().allow_ip(f"session:{client}", 30):
             _fail(429, "Too many requests, please wait a moment.", "rate_limited")
         data = _body()
         previous = str(data.get("token") or "")
@@ -296,7 +293,7 @@ class GuestConversationsHandler:
     def POST(self, share_token):
         state = _load_share(share_token)
         visitor_id = _visitor(state)
-        if not get_service().allow_ip(f"conv:{_client_ip()}", 30):
+        if not get_pages().allow_ip(f"conv:{_client_ip()}", 30):
             _fail(429, "Too many requests, please wait a moment.", "rate_limited")
         return _json({"status": "success", "session_id": store.new_session_id(visitor_id)})
 
@@ -312,9 +309,10 @@ class GuestConversationHandler:
 class GuestClearHandler:
     def POST(self, share_token, session_id):
         state = _load_share(share_token)
-        session_id = _owned_session(state, _visitor(state), session_id)
+        visitor_id = _visitor(state)
+        session_id = _owned_session(state, visitor_id, session_id)
         try:
-            get_service().clear_context(state, session_id)
+            get_service().clear_context(state, visitor_id, session_id)
         except GuestError as e:
             _fail(e.code, e.message, e.reason)
         return _json({"status": "success"})
@@ -324,7 +322,7 @@ class GuestHistoryHandler:
     def GET(self, share_token):
         state = _load_share(share_token)
         session_id = _owned_session(state, _visitor(state))
-        return _json(dict(get_service().history(state, session_id), status="success"))
+        return _json(dict(get_pages().history(state, session_id), status="success"))
 
 
 class GuestMessageHandler:
@@ -332,15 +330,15 @@ class GuestMessageHandler:
         state = _load_share(share_token)
         visitor_id = _visitor(state)
         session_id = _owned_session(state, visitor_id)
-        service = get_service()
-        if not service.allow_ip(f"msg:{_client_ip()}", 60):
+        pages = get_pages()
+        if not pages.allow_ip(f"msg:{_client_ip()}", 60):
             _fail(429, "Too many requests, please wait a moment.", "rate_limited")
         data = _body()
         attachments = data.get("attachments") or []
         if not isinstance(attachments, list):
             attachments = []
         try:
-            request_id = service.start(
+            request_id = pages.start(
                 state, visitor_id, session_id, str(data.get("text") or ""),
                 [str(a) for a in attachments if isinstance(a, str)],
             )
@@ -354,7 +352,7 @@ class GuestStreamHandler:
         state = _load_share(share_token)
         session_id = _owned_session(state, _visitor(state))
         params = web.input(request_id="", after="0")
-        run = get_service().get_run(params.request_id, state.slug, session_id)
+        run = get_pages().get_run(params.request_id, state.slug, session_id)
         if run is None:
             _fail(404, "Unknown request.", "unknown_request")
         try:
@@ -364,7 +362,7 @@ class GuestStreamHandler:
         web.header("Content-Type", "text/event-stream; charset=utf-8")
         web.header("Cache-Control", "no-cache")
         web.header("X-Accel-Buffering", "no")
-        return get_service().stream(run, after)
+        return get_pages().stream(run, after)
 
 
 class GuestCancelHandler:
@@ -380,8 +378,7 @@ class GuestUploadHandler:
     def POST(self, share_token):
         state = _load_share(share_token)
         session_id = _owned_session(state, _visitor(state))
-        service = get_service()
-        if not service.allow_ip(f"upload:{_client_ip()}", 20):
+        if not get_pages().allow_ip(f"upload:{_client_ip()}", 20):
             _fail(429, "Too many uploads, please wait a moment.", "rate_limited")
         limits = state.effective.get("limits") or {}
         max_bytes = int(limits.get("max_upload_mb") or 20) * 1024 * 1024
@@ -391,10 +388,6 @@ class GuestUploadHandler:
             declared = 0
         if declared > max_bytes + 64 * 1024:
             _fail(413, "File is too large.", "too_large")
-        guard = service.guard_for(state, session_id)
-        work_limit = int(limits.get("max_work_mb") or 200) * 1024 * 1024
-        if guard.work_usage_bytes() + declared > work_limit:
-            _fail(413, "This conversation's storage is full.", "storage_full")
         try:
             params = _multipart_lists(self.MAX_PARTS)
             file_obj = _first_value(params, "file")
@@ -409,23 +402,15 @@ class GuestUploadHandler:
             logger.warning(f"[GuestShare] Upload failed: {e}")
             _fail(400, "Upload failed.")
         raw_name = getattr(file_obj, "filename", "") or getattr(file_obj, "raw_filename", "") or "file"
-        name = _SAFE_NAME_RE.sub("_", os.path.basename(str(raw_name).replace("\\", "/"))).strip(" .") or "file"
-        name = name[-120:]
-        uploads = os.path.join(guard.work_dir, "uploads")
-        os.makedirs(uploads, exist_ok=True)
-        stem, ext = os.path.splitext(name)
-        target, n = os.path.join(uploads, name), 1
-        while os.path.exists(target):
-            target = os.path.join(uploads, f"{stem}_{n}{ext}")
-            n += 1
-        with open(target, "wb") as f:
-            f.write(content)
-        vpath = guard.virtual_of(target)
-        is_image = (mimetypes.guess_type(target)[0] or "").startswith("image/")
+        try:
+            vpath = get_service().save_upload(state, session_id, str(raw_name), content)
+        except GuestError as e:
+            _fail(e.code, e.message, e.reason)
+        is_image = (mimetypes.guess_type(vpath)[0] or "").startswith("image/")
         return _json({
-            "status": "success", "path": vpath, "name": os.path.basename(target), "size": len(content),
+            "status": "success", "path": vpath, "name": os.path.basename(vpath), "size": len(content),
             "file_type": "image" if is_image else "file",
-            "url": service.file_url(state.share_token, state.slug, session_id, vpath),
+            "url": file_url(state.share_token, state.slug, session_id, vpath),
         })
 
 
@@ -441,7 +426,7 @@ class GuestVoiceHandler:
         _visitor(state)
         if not _asr_available():
             _fail(404, "Voice input is not available.", "voice_unavailable")
-        if not get_service().allow_ip(f"asr:{_client_ip()}", 20):
+        if not get_pages().allow_ip(f"asr:{_client_ip()}", 20):
             _fail(429, "Too many requests, please wait a moment.", "rate_limited")
         try:
             params = _multipart_lists(self.MAX_PARTS)
@@ -494,12 +479,8 @@ class GuestFileHandler:
             _fail(404, "Not found")
         if not params.sid.isalnum() or not store.verify_file(state.slug, params.sid, params.path, expires, params.sig):
             _fail(404, "Not found")
-        guard = get_service().guard_for(state, params.sid)
-        try:
-            real = guard.resolve(params.path)
-        except GuestPathError:
-            _fail(404, "Not found")
-        if not os.path.isfile(real):
+        real = get_service().local_file(state, params.sid, params.path)
+        if real is None:
             _fail(404, "Not found")
         mime = mimetypes.guess_type(real)[0] or "application/octet-stream"
         name = os.path.basename(real)
