@@ -210,6 +210,18 @@ def _is_password_enabled():
     return bool(_get_web_password())
 
 
+def _client_ip() -> str:
+    env = getattr(web.ctx, "env", {}) or {}
+    addr = (env.get("REMOTE_ADDR") or "").strip()
+    # Forwarding headers are only believed from a proxy on this machine;
+    # anyone else could set them to dodge the per-client limits.
+    if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith("127."):
+        forwarded = (env.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
+        real = (env.get("HTTP_X_REAL_IP") or "").strip()
+        return forwarded or real or addr
+    return addr or "unknown"
+
+
 # Set once the console owns its socket. The desktop watchdog waits on this to
 # tell "still starting" apart from "wedged and never going to answer".
 SERVING = threading.Event()

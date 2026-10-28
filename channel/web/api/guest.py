@@ -41,6 +41,7 @@ from agent.guest.runtime import GuestError, available_skills, get_service, refer
 from channel.web.core import template
 from channel.web.core.guest_pages import file_url, get_pages
 from channel.web.core._common import (
+    _client_ip,
     _first_value,
     _multipart_lists,
     _read_uploaded_file_bytes_limited,
@@ -75,18 +76,6 @@ def _fail(code: int, message: str, reason: str = ""):
         {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"},
         json.dumps({"status": "error", "message": message, "reason": reason}, ensure_ascii=False),
     )
-
-
-def _client_ip() -> str:
-    env = getattr(web.ctx, "env", {}) or {}
-    addr = (env.get("REMOTE_ADDR") or "").strip()
-    # Forwarding headers are only believed from a proxy on this machine;
-    # anyone else could set them to dodge the per-client limits.
-    if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith("127."):
-        forwarded = (env.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
-        real = (env.get("HTTP_X_REAL_IP") or "").strip()
-        return forwarded or real or addr
-    return addr or "unknown"
 
 
 def _body() -> dict:
