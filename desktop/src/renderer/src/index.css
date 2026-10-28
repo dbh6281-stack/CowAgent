@@ -220,6 +220,14 @@ body[data-wallpaper='on'] .composer-card {
   background-color: color-mix(in srgb, var(--bg-inset) 90%, transparent);
 }
 
+/* The history column sits beside the chat: let the wallpaper run through it
+   the same way instead of a frosted band, keeping only its divider. */
+body[data-wallpaper='on'] .session-list.bg-surface {
+  background-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* ---- New-chat home page under a wallpaper ------------------------
    When a wallpaper is active, the empty chat home keeps its original
    centered layout; the suggestion cards just get a premium frosted-glass
