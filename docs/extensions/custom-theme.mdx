@@ -1,13 +1,16 @@
 ---
 title: Custom Themes
-description: "Switch built-in themes in the CowAgent desktop app, import theme packages, or let the Agent design your own colors and wallpaper."
+description: "Switch built-in themes in the Web console and the desktop app, import theme packages, or let the Agent design your own colors, wallpaper and logo."
 ---
 
-The desktop app supports themes (skins). A theme only describes colors, corner radius, fonts and a background wallpaper, never the UI layout, so themes keep working across app updates.
+The Web console and the desktop app both support themes (skins). They share one themes folder, so a theme imported or generated in one is available in the other. A theme only describes colors, corner radius, fonts and a background wallpaper, never the UI layout, so themes keep working across updates.
 
 ## Switch Themes
 
-Open the "More" menu at the bottom-left, hover "Theme" to show the theme list, and click one to apply it. Themes are independent of light / dark mode, and every theme covers both.
+- **Web console**: click the version number at the bottom-left and hover "Theme" in the menu to show the theme list
+- **Desktop app**: open the "More" menu at the bottom-left and hover "Theme" to show the theme list
+
+Click a theme to apply it. Themes are independent of light / dark mode, and every theme covers both.
 
 Built-in color themes:
 
@@ -19,22 +22,20 @@ Built-in color themes:
 
 ## Import Themes
 
-Click "Custom theme…" at the bottom of the theme list to open the custom theme dialog, then drag a theme `.zip` or theme folder onto it. You can also click it to browse instead (on Windows, pick the `theme.json` inside a folder to import that folder). The imported theme is applied right away.
+Click "Custom theme…" at the bottom of the theme list to open the custom theme dialog, then drag a theme `.zip` or theme folder onto it. You can also click it to browse instead (in the Windows app, pick the `theme.json` inside a folder to import that folder). The imported theme is applied right away.
 
-On import the app checks that:
+On import CowAgent checks that:
 
 - `theme.json` sits at the root of the package, or inside its single top-level folder
 - Only `theme.json` and images (`jpg` / `png` / `webp` / `gif` / `svg`) are copied; other files are ignored
 - Each file is at most 16MB and the whole theme at most 64MB
 - An existing theme with the same ID is only replaced after you confirm; an ID taken by a built-in theme is renamed automatically
 
-Imported themes live in `~/cow/system/themes/` (`system/themes/` under your Agent workspace if you moved it), one folder per theme. Click "Open themes folder" at the bottom of that dialog to manage them: delete a folder to remove a theme, or copy a theme folder in directly; it shows up the next time you open the theme list.
+Imported themes live in `~/cow/system/themes/` (`system/themes/` under your Agent workspace if you moved it), one folder per theme; the custom theme dialog shows the path at the bottom. Delete a folder to remove a theme, or copy a theme folder in directly; it shows up the next time you open the theme list. In the desktop app, "Open themes folder" in that dialog opens it for you. When CowAgent runs on a server, the folder is on the machine running CowAgent.
 
-## Web Console
-
-The web console supports themes too. Click the version number at the bottom left and hover "Theme" in the menu to switch; "Custom theme…" at the bottom of the list imports a package or has the Agent make one, just like in the app.
-
-The web console and the desktop app share the `~/cow/system/themes/` folder, so a theme imported or generated in one is available in the other. When CowAgent runs on a server, the folder is on the machine running CowAgent. The web console does not support `shape` (corner radius, fonts) yet; colors, wallpapers and logos all work.
+<Note>
+The Web console does not support `shape` (corner radius, fonts) yet; colors, wallpapers and logos all work.
+</Note>
 
 ## Theme Structure
 
@@ -88,7 +89,7 @@ Example `theme.json`:
 
 ### Colors
 
-Values accept any CSS color (e.g. `#7c4dff`, `rgba(...)`). Keys you leave out fall back to the default theme, and unknown keys are ignored. If the colors make text hard to tell apart from its background, the app falls back to the default theme.
+Values accept any CSS color (e.g. `#7c4dff`, `rgba(...)`). Keys you leave out fall back to the default theme, and unknown keys are ignored. If the colors make text hard to tell apart from its background, the default theme is used instead.
 
 | Key | Used for |
 | --- | --- |
@@ -131,14 +132,14 @@ For different wallpapers per appearance, drop the top-level `wallpaper` and set 
 
 ## Let the Agent Create a Theme
 
-The Agent in the desktop app can build a theme for you. It writes the theme to `~/cow/system/themes/`, and if image generation is configured it can generate the wallpaper and logo too.
+The Agent can build a theme for you. It writes the theme to `~/cow/system/themes/`, and if image generation is configured it can generate the wallpaper and logo too.
 
 The quickest way is the "Start" button next to "Let the Agent create one" in the custom theme dialog: it opens a new chat with the prompt filled in, so you only add the style you want at the end and send it. You can also attach reference images (a character or scene you like), and the Agent will base the wallpaper and logo on them.
 
 You can also send the prompt below in any chat, with the style you want on the last line. To fine-tune afterwards, such as "make the wallpaper brighter" or "switch the accent to teal", just tell the Agent; reopen the theme list to see the change.
 
 ```text
-Create a theme for this desktop app.
+Create a theme for this app.
 
 Requirements:
 1. Create theme.json in ~/cow/system/themes/<theme-id>/ with a lowercase, hyphenated id, shaped like {"specVersion": 1, "id", "name", "light": {"colors": {...}}, "dark": {"colors": {...}}}.

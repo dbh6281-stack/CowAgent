@@ -11,7 +11,7 @@ import { prefillChatInput } from '../store/draftStore'
 import { startNewChat } from '../lib/newChat'
 
 const themesDocsUrl = () =>
-  `${getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai'}/guide/desktop-themes`
+  `${getLang() === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai'}/extensions/custom-theme`
 
 // "Custom theme" dialog: import a package (drop a .zip / folder, or pick one) or
 // hand off to the Agent with a ready-made prompt to design a new theme.

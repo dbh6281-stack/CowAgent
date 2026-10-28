@@ -472,7 +472,7 @@ document.addEventListener('click', (e) => {
 // ---- Custom theme dialog ----------------------------------------------------
 
 function _themeDocsUrl() {
-    return `${currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai'}/guide/desktop-themes`;
+    return `${currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai'}/extensions/custom-theme`;
 }
 
 function openThemeAddModal() {
