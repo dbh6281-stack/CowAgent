@@ -19,11 +19,23 @@ Two tiers, split by whether "does not parse" is ever a legitimate state:
 import ast
 import json
 import os
+import re
 from typing import Optional, Tuple
 
 # Extensions whose content is an atomic structured blob: refuse to write when
 # it does not parse.
 BLOCKING_EXTS = frozenset({'.json', '.yaml', '.yml', '.toml'})
+
+# A JSON string (group 1, kept as is), or a comment / trailing comma outside of
+# one - so "https://..." or "@/*" inside a string is never taken for a comment.
+_JSON_STRING = r'("(?:\\.|[^"\\])*")'
+_JSONC_COMMENT = re.compile(_JSON_STRING + r'|//[^\n]*|/\*.*?\*/', re.DOTALL)
+_JSONC_TRAILING_COMMA = re.compile(_JSON_STRING + r'|,(?=\s*[\]}])')
+
+# Go template syntax, the language of Helm charts: whitespace trimming
+# ({{- ... -}}) or a field or variable reference ({{ .Values.x }}, {{ $name }}).
+# Only looked for in YAML under a templates/ directory, where Helm keeps them.
+_GO_TEMPLATE = re.compile(r'\{\{-|-\}\}|\{\{(?:[^{}]*?[\s(])?[.$]\w')
 
 
 def _check_json(text: str) -> Optional[str]:
@@ -32,6 +44,32 @@ def _check_json(text: str) -> Optional[str]:
     except ValueError as e:
         return str(e)
     return None
+
+
+def _blank(match: re.Match) -> str:
+    # Keep strings; space out comments and trailing commas rather than drop
+    # them, so error positions still match the file.
+    return match.group(1) or re.sub(r'[^\n]', ' ', match.group())
+
+
+def _check_jsonc(text: str) -> Optional[str]:
+    """JSON with comments and trailing commas, as TypeScript and VS Code read it."""
+    text = _JSONC_COMMENT.sub(_blank, text)
+    return _check_json(_JSONC_TRAILING_COMMA.sub(_blank, text))
+
+
+def _is_jsonc(path: str) -> bool:
+    """Whether this .json file is read as JSON with comments.
+
+    Only well-known names: anywhere else a comment is a real error - npm
+    rejects one in package.json, and so does CowAgent in its own config.json.
+    """
+    name = os.path.basename(path).lower()
+    return (
+        name.startswith(('tsconfig', 'jsconfig'))
+        or name in ('devcontainer.json', '.devcontainer.json', '.eslintrc.json')
+        or os.path.basename(os.path.dirname(path)).lower() == '.vscode'
+    )
 
 
 def _check_yaml(text: str) -> Optional[str]:
@@ -48,6 +86,21 @@ def _check_yaml(text: str) -> Optional[str]:
     except Exception as e:
         return str(e).replace('\n', ' ')
     return None
+
+
+def _is_helm_template(path: str) -> bool:
+    """Whether this YAML file sits in a templates/ directory, the only place
+    Helm renders chart templates from."""
+    return 'templates' in os.path.normpath(os.path.dirname(path)).lower().split(os.sep)
+
+
+def _check_helm_template(text: str) -> Optional[str]:
+    error = _check_yaml(text)
+    if error and _GO_TEMPLATE.search(text):
+        # A Helm chart template is only YAML once rendered, so a parse
+        # failure says nothing about it.
+        return None
+    return error
 
 
 def _check_toml(text: str) -> Optional[str]:
@@ -89,7 +142,13 @@ def check(path: str, text: str) -> Optional[str]:
     None is also returned for file types we cannot check, so callers can treat
     "no error" and "not checked" the same way.
     """
-    checker = _CHECKERS.get(os.path.splitext(path)[1].lower())
+    ext = os.path.splitext(path)[1].lower()
+    if ext == '.json' and _is_jsonc(path):
+        checker = _check_jsonc
+    elif ext in ('.yaml', '.yml') and _is_helm_template(path):
+        checker = _check_helm_template
+    else:
+        checker = _CHECKERS.get(ext)
     if checker is None:
         return None
     try:
