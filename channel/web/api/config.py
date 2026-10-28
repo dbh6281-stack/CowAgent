@@ -256,25 +256,18 @@ class ConfigHandler:
                 except Exception as lang_err:
                     logger.warning(f"[WebChannel] Failed to apply language: {lang_err}")
 
-            # Check if password was cleared: if there was a password before clearing,
-            # the service is likely bound to 0.0.0.0 (public), so warn the user.
+            # Clearing the password does not move the server back to this
+            # machine, so warn while it still listens beyond it.
             password_warning = None
-            if "web_password" in applied:
-                new_password = applied["web_password"]
-                configured_host = file_cfg.get("web_host", "")
-                
-                # If password was cleared and there was a password before
-                if not new_password and old_password:
-                    # If web_host is not explicitly set, the service auto-binds based on password
-                    # With password → 0.0.0.0 (public), without password → 127.0.0.1 (local)
-                    # So clearing password when it was previously set means going from public to local
-                    if not configured_host or configured_host == "0.0.0.0":
-                        password_warning = "password_cleared_with_public_host"
-                        logger.warning(
-                            "[WebChannel] Password cleared while service is likely bound to 0.0.0.0. "
-                            "Consider restarting the service to rebind to 127.0.0.1 "
-                            "or explicitly set web_host in config to prevent unauthorized access."
-                        )
+            if "web_password" in applied and not applied["web_password"] and old_password:
+                from channel.web.api.integrations import is_loopback_host, listen_host
+
+                if not is_loopback_host(listen_host()):
+                    password_warning = "password_cleared_with_public_host"
+                    logger.warning(
+                        "[WebChannel] Password cleared while the server still listens beyond this machine; "
+                        "set a password again or change the listen address to 127.0.0.1"
+                    )
 
             # Reset Bridge so that bot routing reflects the new config.
             # Without this, Bridge keeps its cached bot instance (e.g. LinkAIBot)

@@ -29,6 +29,8 @@ const SHARE_FOOTER_TEXT = 'Powered by CowAgent';
 const SHARE_FOOTER_URL = 'https://cowagent.ai';
 
 let integrationsPublicUrl = '';
+let integrationsLanUrl = '';
+let integrationsListen = null;
 let sharesList = [];
 let sharesFeature = null;
 let sharesModels = [];
@@ -51,28 +53,191 @@ let shareLogoPreview = '';
 // Public address
 // =====================================================================
 /** The origin links and examples are shown with: the owner's public address
- *  when set, else the address this console was opened on. */
+ *  when set, else the address this console was opened on, swapped for the
+ *  local network address when that is only reachable from this machine. */
 function integrationBaseUrl() {
-    return (integrationsPublicUrl || location.origin).replace(/\/+$/, '');
+    return (integrationsPublicUrl || _consoleOrigin()).replace(/\/+$/, '');
+}
+
+function _consoleOrigin() {
+    return (_isLoopback(_pageHost()) && integrationsLanUrl) || location.origin;
+}
+
+function _pageHost() {
+    return location.hostname.replace(/^\[|\]$/g, '');
+}
+
+function _isLoopback(host) {
+    return /^(localhost|127\.|::1$)/.test(host);
 }
 
 function loadIntegrationsView() {
     fetch('/api/integrations').then(r => r.json()).then(data => {
-        if (data.status !== 'success') return;
-        integrationsPublicUrl = data.public_url || '';
-        _renderPublicUrl();
-        renderExternalApi();
-        if (sharesFeature) renderSharesView();
+        if (data.status === 'success') _applyIntegrations(data);
     }).catch(() => {});
     loadExternalApi();
     loadSharesView();
 }
 
+function _applyIntegrations(data) {
+    integrationsPublicUrl = data.public_url || '';
+    integrationsLanUrl = (data.lan_urls || [])[0] || '';
+    integrationsListen = data;
+    _renderPublicUrl();
+    renderExternalApi();
+    if (sharesFeature) renderSharesView();
+}
+
 function _renderPublicUrl() {
     const input = document.getElementById('cfg-public-url');
     if (!input) return;
-    input.value = integrationsPublicUrl;
-    input.placeholder = location.origin;
+    // Empty means detected automatically; show what is in use rather than a blank.
+    input.value = integrationsPublicUrl || _consoleOrigin();
+    _renderListen();
+}
+
+/** The listen address fields, and the addresses that reach the server. */
+function _renderListen() {
+    const row = document.getElementById('cfg-listen-row');
+    const data = integrationsListen;
+    if (!row || !data || !data.listen || !data.listen.port) return;
+    _renderListenFields(data.listen.host, data.listen.port);
+    _renderListenStatus();
+    row.classList.remove('hidden');
+}
+
+/** `problem` is {text, passwordLink}, shown in place of the addresses. */
+function _renderListenStatus(problem) {
+    const box = document.getElementById('cfg-listen');
+    if (!box || !integrationsListen) return;
+    if (problem) {
+        box.innerHTML = `<span class="text-red-500">${escapeHtml(problem.text)}</span>` + (problem.passwordLink
+            ? ` <button class="ml-1 text-primary-500 hover:underline cursor-pointer" onclick="goToConsolePassword()">${escapeHtml(t('shares_go_settings'))}</button>`
+            : '');
+        return;
+    }
+    const urls = integrationsListen.lan_urls || [];
+    box.innerHTML = urls.length
+        ? `${escapeHtml(t('config_listen_lan'))} ` + urls.map(u => `<span class="font-mono text-slate-600 dark:text-slate-300">${escapeHtml(u)}</span>`).join(' · ')
+        : '';
+}
+
+const LISTEN_PRESETS = ['127.0.0.1', '0.0.0.0'];
+
+function _renderListenFields(host, port) {
+    const choice = LISTEN_PRESETS.includes(host) ? host : 'custom';
+    initDropdown(document.getElementById('cfg-listen-choice'), [
+        { value: '127.0.0.1', label: '127.0.0.1', hint: t('config_listen_local') },
+        { value: '0.0.0.0', label: '0.0.0.0', hint: t('config_listen_all') },
+        { value: 'custom', label: t('config_listen_custom') },
+    ], choice, _onListenChoice);
+    document.getElementById('cfg-listen-host').value = choice === 'custom' ? host : '';
+    document.getElementById('cfg-listen-port').value = port;
+    _showListenInput(choice === 'custom');
+}
+
+function _onListenChoice(value) {
+    _showListenInput(value === 'custom');
+    if (value === 'custom') document.getElementById('cfg-listen-host').focus();
+    _renderListenStatus(value !== 'custom' && _needsPassword(value) ? _passwordProblem() : null);
+}
+
+function _needsPassword(host) {
+    return !integrationsListen.password_set && !_isLoopback(host);
+}
+
+function _passwordProblem() {
+    return { text: t('config_listen_password_required'), passwordLink: true };
+}
+
+function _showListenInput(show) {
+    const choice = document.getElementById('cfg-listen-choice');
+    choice.classList.toggle('flex-1', !show);
+    choice.classList.toggle('w-56', show);
+    choice.classList.toggle('flex-shrink-0', show);
+    document.getElementById('cfg-listen-host').classList.toggle('hidden', !show);
+}
+
+/** Where this page can be opened once the server listens on host:port, or
+ *  null when that is unknown or it can no longer be reached from here. */
+function _nextOrigin(host, port) {
+    const page = _pageHost();
+    let name = location.hostname;
+    if (_isLoopback(host)) {
+        if (!_isLoopback(page)) return null;
+    } else if (host !== '0.0.0.0' && host !== '::' && host !== page) {
+        if (!_isLoopback(page)) return null;
+        name = host.includes(':') ? `[${host}]` : host;
+    }
+    const current = integrationsListen.listen;
+    const pagePort = location.port || (location.protocol === 'https:' ? '443' : '80');
+    // Behind a reverse proxy the page's port is not the server's, and only
+    // the proxy knows the way to a new one.
+    if (pagePort !== String(current.port)) {
+        return port === current.port && name === location.hostname ? location.origin : null;
+    }
+    const next = `${location.protocol}//${name}:${port}`;
+    return next === `${location.protocol}//${location.hostname}:${pagePort}` ? location.origin : next;
+}
+
+function saveListenHost() {
+    if (!integrationsListen) return;
+    const choice = document.getElementById('cfg-listen-choice')._ddValue;
+    const host = choice === 'custom' ? document.getElementById('cfg-listen-host').value.trim() : choice;
+    const port = parseInt(document.getElementById('cfg-listen-port').value.trim(), 10);
+    if (!host) return _renderListenStatus({ text: t('config_listen_invalid_host') });
+    if (!(port > 0 && port < 65536)) return _renderListenStatus({ text: t('config_listen_invalid_port') });
+    if (_needsPassword(host)) return _renderListenStatus(_passwordProblem());
+    const current = integrationsListen.listen;
+    if (host === current.host && port === current.port) return _renderListenStatus();
+    const next = _nextOrigin(host, port);
+    const btn = document.getElementById('cfg-listen-save');
+    const done = (text) => {
+        btn.disabled = false;
+        btn.textContent = text || t('config_listen_apply');
+        if (text) setTimeout(() => { btn.textContent = t('config_listen_apply'); }, 2000);
+    };
+    // The server answers first and restarts a moment later, on the new
+    // address or, if that fails, back on the old one.
+    const settle = (tries) => fetch('/api/integrations').then(r => r.json()).then(d => {
+        if (d.status !== 'success') throw new Error();
+        _applyIntegrations(d);
+        const moved = d.listen.host === host && d.listen.port === port;
+        if (moved) done(t('config_listen_restarted'));
+        else { done(); _renderListenStatus({ text: t('config_listen_failed') }); }
+    }).catch(() => tries > 0 ? new Promise(r => setTimeout(r, 500)).then(() => settle(tries - 1)) : done());
+    const apply = () => {
+        btn.disabled = true;
+        btn.textContent = t('config_listen_restarting');
+        fetch('/api/integrations', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ web_host: host, web_port: port }),
+        }).then(r => r.json()).then(data => {
+            if (data.status !== 'success') {
+                const reason = data.reason || 'invalid_host';
+                done();
+                return _renderListenStatus({ text: t(`config_listen_${reason}`), passwordLink: reason === 'password_required' });
+            }
+            setTimeout(() => {
+                if (next && next !== location.origin) {
+                    location.href = next + location.pathname + location.search + location.hash;
+                    return;
+                }
+                settle(20);
+            }, 1500);
+        }).catch(() => done());
+    };
+    let message = t('config_listen_restart_confirm');
+    if (!next) message = t('config_listen_leave_confirm');
+    else if (next !== location.origin) message = t('config_listen_move_confirm').replace('{url}', next);
+    showConfirmDialog({
+        title: t('config_listen_apply'),
+        message,
+        okText: t('config_listen_apply'),
+        tone: next ? 'primary' : 'danger',
+        onConfirm: apply,
+    });
 }
 
 function _publicUrlStatus(text, isError) {
@@ -84,7 +249,8 @@ function _publicUrlStatus(text, isError) {
 
 function savePublicUrl() {
     const input = document.getElementById('cfg-public-url');
-    const value = input.value.trim().replace(/\/+$/, '');
+    let value = input.value.trim().replace(/\/+$/, '');
+    if (value === _consoleOrigin()) value = '';
     if (value && !/^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?$/i.test(value)) {
         _publicUrlStatus(t('config_public_url_invalid'), true);
         input.focus();
@@ -98,10 +264,7 @@ function savePublicUrl() {
         body: JSON.stringify({ public_url: value }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(t('config_public_url_invalid'));
-        integrationsPublicUrl = data.public_url || '';
-        _renderPublicUrl();
-        renderExternalApi();
-        if (sharesFeature) renderSharesView();
+        _applyIntegrations(data);
         _publicUrlStatus(t('config_saved'));
         setTimeout(() => _publicUrlStatus(''), 2000);
     }).catch(err => _publicUrlStatus(err.message, true))

@@ -367,6 +367,37 @@
                                         </div>
                                         <p id="cfg-public-url-status" class="text-xs mt-1.5 min-h-[1rem] text-slate-400 dark:text-slate-500"></p>
                                     </div>
+                                    <div id="cfg-listen-row" class="hidden pt-4 border-t border-slate-100 dark:border-white/5">
+                                        <label class="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                                            <span data-i18n="config_listen_host">监听地址</span>
+                                            <span class="cfg-tip" data-tip-key="config_listen_host_tip" data-tip-float><i class="fas fa-circle-question"></i></span>
+                                        </label>
+                                        <div class="flex gap-2">
+                                            <div id="cfg-listen-choice" class="cfg-dropdown flex-1 min-w-0" tabindex="0">
+                                                <div class="cfg-dropdown-selected">
+                                                    <span class="cfg-dropdown-text">--</span>
+                                                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                                </div>
+                                                <div class="cfg-dropdown-menu"></div>
+                                            </div>
+                                            <input id="cfg-listen-host" type="text" spellcheck="false" autocomplete="off"
+                                                   class="hidden flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                                          bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 font-mono
+                                                          focus:outline-none focus:border-primary-500 transition-colors"
+                                                   data-i18n-placeholder="config_listen_custom_placeholder">
+                                            <span class="self-center text-slate-400 dark:text-slate-500">:</span>
+                                            <input id="cfg-listen-port" type="text" inputmode="numeric" spellcheck="false" autocomplete="off"
+                                                   class="w-24 flex-shrink-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                                          bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 font-mono
+                                                          focus:outline-none focus:border-primary-500 transition-colors"
+                                                   data-i18n-placeholder="config_listen_port">
+                                            <button id="cfg-listen-save"
+                                                    class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium flex-shrink-0
+                                                           cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    onclick="saveListenHost()" data-i18n="config_listen_apply">保存并重启</button>
+                                        </div>
+                                        <p id="cfg-listen" class="text-xs mt-1.5 text-slate-400 dark:text-slate-500"></p>
+                                    </div>
                                 </div>
 
                                 <!-- Chat API Card -->

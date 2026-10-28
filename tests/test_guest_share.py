@@ -525,6 +525,159 @@ def test_login_limiter_locks_a_profile_under_distributed_guessing():
     assert limiter.locked_for("p", "10.9.9.9") == 0
 
 
+def test_console_login_locks_a_client_after_wrong_passwords(guest_env, monkeypatch):
+    from channel.web.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api, "_login_limiter", LoginLimiter())
+    app = _app()
+    for _ in range(5):
+        res = _post(app, "/auth/login", {"password": "wrong-guess"})
+        assert json.loads(res.data)["reason"] == "wrong_password"
+    locked = json.loads(_post(app, "/auth/login", {"password": "owner-secret-pass"}).data)
+    assert locked["status"] == "error" and locked["reason"] == "locked" and locked["retry_after"] > 0
+
+
+def test_guessing_from_the_network_does_not_lock_out_this_machine(guest_env, monkeypatch):
+    from channel.web.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api, "_login_limiter", LoginLimiter())
+    app = _app()
+
+    def login(password, addr):
+        return json.loads(app.request("/auth/login", method="POST", data=json.dumps({"password": password}),
+                                      headers={"Content-Type": "application/json"},
+                                      env={"REMOTE_ADDR": addr}).data)
+
+    for i in range(30):
+        login("wrong-guess", f"10.0.0.{i + 1}")
+    assert login("owner-secret-pass", "10.0.1.1")["reason"] == "locked"
+    assert login("owner-secret-pass", "127.0.0.1")["status"] == "success"
+
+
+def test_integrations_report_where_the_server_listens(guest_env, monkeypatch):
+    from channel.web.api import integrations as integrations_api
+
+    monkeypatch.setattr(integrations_api, "_listen", {"host": "127.0.0.1", "port": 9876, "scheme": "http"})
+    app = _app()
+    cookie = _owner_cookie(app)
+    data = json.loads(app.request("/api/integrations", headers={"Cookie": cookie}).data)
+    assert data["listen"] == {"host": "127.0.0.1", "port": 9876}
+    assert data["local_only"] is True and data["lan_urls"] == [] and data["password_set"] is True
+
+    monkeypatch.setattr(integrations_api, "_lan_ips", lambda: ["192.168.1.20"])
+    integrations_api.record_listen("0.0.0.0", 9876, "http")
+    data = json.loads(app.request("/api/integrations", headers={"Cookie": cookie}).data)
+    assert data["local_only"] is False and data["lan_urls"] == ["http://192.168.1.20:9876"]
+
+    integrations_api.record_listen("192.168.1.30", 9876, "http")
+    data = json.loads(app.request("/api/integrations", headers={"Cookie": cookie}).data)
+    assert data["local_only"] is False and data["lan_urls"] == ["http://192.168.1.30:9876"]
+
+
+def test_saving_the_listen_address_moves_the_server(guest_env, monkeypatch):
+    import socket
+
+    from channel.web.api import integrations as integrations_api
+    from channel.web.core import channel as core_channel
+    from config import get_data_root
+
+    rebinds = []
+
+    class FakeChannel:
+        def rebind(self, host, port, on_bound):
+            rebinds.append((host, port))
+            on_bound()
+
+    monkeypatch.setattr(core_channel, "WebChannel", FakeChannel)
+    monkeypatch.setitem(config.conf(), "web_host", "")
+    monkeypatch.setitem(config.conf(), "web_port", 9876)
+    monkeypatch.delenv("COW_DESKTOP", raising=False)
+    monkeypatch.setattr(integrations_api, "_lan_ips", lambda: ["192.168.1.20"])
+    monkeypatch.setattr(integrations_api, "_listen", {"host": "127.0.0.1", "port": 9876, "scheme": "http"})
+    app = _app()
+    cookie = _owner_cookie(app)
+
+    def put(body):
+        res = app.request("/api/integrations", method="PUT", data=json.dumps(body),
+                          headers={"Cookie": cookie, "Content-Type": "application/json"})
+        return json.loads(res.data)
+
+    data = put({"web_host": "0.0.0.0"})
+    assert data["listen"] == {"host": "0.0.0.0", "port": 9876} and data["lan_urls"] == ["http://192.168.1.20:9876"]
+    assert rebinds == [("0.0.0.0", 9876)] and config.conf()["web_host"] == "0.0.0.0"
+    with open(os.path.join(get_data_root(), "config.json")) as f:
+        saved = json.load(f)
+    assert saved["web_host"] == "0.0.0.0" and "web_port" not in saved
+
+    integrations_api.record_listen("0.0.0.0", 9876, "http")
+    put({"web_host": "0.0.0.0"})
+    assert len(rebinds) == 1
+    assert put({"web_host": "127.0.0.1"})["local_only"] is True and rebinds[-1] == ("127.0.0.1", 9876)
+    integrations_api.record_listen("127.0.0.1", 9876, "http")
+
+    with socket.socket() as spare:
+        spare.bind(("127.0.0.1", 0))
+        free_port = spare.getsockname()[1]
+    data = put({"web_host": "127.0.0.1", "web_port": free_port})
+    assert data["listen"]["port"] == free_port and rebinds[-1] == ("127.0.0.1", free_port)
+    assert config.conf()["web_port"] == free_port
+    integrations_api.record_listen("127.0.0.1", free_port, "http")
+
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        assert put({"web_port": taken.getsockname()[1]})["reason"] == "port_in_use"
+    assert put({"web_port": 70000})["reason"] == "invalid_port"
+    monkeypatch.setenv("COW_DESKTOP", "1")
+    assert put({"web_port": 9876})["reason"] == "port_fixed"
+    monkeypatch.delenv("COW_DESKTOP")
+
+    assert put({"web_host": "example.com"})["reason"] == "invalid_host"
+    assert put({"web_host": "203.0.113.9"})["reason"] == "unavailable_host"
+    monkeypatch.setitem(config.conf(), "web_password", "")
+    assert put({"web_host": "0.0.0.0"})["reason"] == "password_required"
+    assert len(rebinds) == 3 and config.conf()["web_host"] == "127.0.0.1"
+
+
+def test_the_console_stays_reachable_when_an_address_cannot_be_bound(monkeypatch):
+    from channel.web.api import integrations as integrations_api
+    from channel.web.core.channel import WebChannel
+
+    class FakeServer:
+        def __init__(self, host, port, free):
+            self.bind_addr = (host, port)
+            self.free = free
+
+        def prepare(self):
+            if self.bind_addr not in self.free:
+                raise OSError("bind failed")
+
+    channel = WebChannel.__wrapped__.__new__(WebChannel.__wrapped__)
+    monkeypatch.setattr("channel.web.core.channel.time.sleep", lambda s: None)
+
+    free = {("127.0.0.1", 9899)}
+    server = channel._bind_again(lambda h, p: FakeServer(h, p, free), ("10.9.9.9", 9900), ("0.0.0.0", 9899))
+    assert server.bind_addr == ("127.0.0.1", 9899) and channel._http_server is server
+
+    attempts = []
+
+    def released_later(host, port):
+        attempts.append((host, port))
+        return FakeServer(host, port, {("0.0.0.0", 9899)} if len(attempts) > 9 else set())
+
+    server = channel._bind_again(released_later, ("10.9.9.9", 9900), ("0.0.0.0", 9899))
+    assert server.bind_addr == ("0.0.0.0", 9899)
+    assert attempts.count(("10.9.9.9", 9900)) == 1
+
+    monkeypatch.delenv("COW_DESKTOP", raising=False)
+    monkeypatch.setattr(integrations_api, "can_bind", lambda host, port: host != "10.9.9.9")
+    assert channel._can_fall_back("10.9.9.9") is True
+    assert channel._can_fall_back("0.0.0.0") is False
+    assert channel._can_fall_back("127.0.0.1") is False
+    monkeypatch.setenv("COW_DESKTOP", "1")
+    assert channel._can_fall_back("0.0.0.0") is True
+
+
 def test_the_password_is_stored_hashed(guest_env):
     app = _app()
     cookie = _owner_cookie(app)
