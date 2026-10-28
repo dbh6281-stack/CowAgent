@@ -89,13 +89,16 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
 
     @property
     def supports_vision(self) -> bool:
+        return self.model_supports_vision(conf().get("model"))
+
+    @staticmethod
+    def model_supports_vision(model_name: str) -> bool:
         """deepseek-flash (V4.1) is natively multimodal, and the dedicated
         deepseek-v4-flash-vision-exp accepts images too. The other chat models
         (deepseek-v4-flash / -pro / -chat / -reasoner) return 400 on image
         input, so gate on the exact model name to let the vision tool route to
         a vision-capable model instead of misfiring the non-vision main model."""
-        model_name = (conf().get("model") or "").lower()
-        return model_name in (const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH_VISION_EXP)
+        return (model_name or "").lower() in (const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH_VISION_EXP)
 
     @staticmethod
     def _is_v4_model(model_name: str) -> bool:

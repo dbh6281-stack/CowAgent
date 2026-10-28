@@ -84,6 +84,30 @@ _MESSAGE_FORMAT_MARKERS = (
 )
 
 
+# Transient failures (timeouts, overload, 429 / 5xx) worth retrying unchanged.
+_RETRYABLE_MARKERS = (
+    'timeout', 'timed out', 'connection', 'network',
+    'rate limit', 'overloaded', 'unavailable', 'busy', 'retry',
+    '429', '500', '502', '503', '504', '512',
+)
+
+# Image references the channels append to the user query, e.g. "[图片: tmp/a.png]".
+_IMAGE_MARKER_RE = re.compile(r"\[(?:图片|Image):\s*([^\]]+)\]")
+_IMAGE_NOT_ATTACHED = "(The images referenced above are not attached to this request; use the vision tool if you need to view them.)"
+
+
+def _user_text(content) -> str:
+    """Text of a user message, skipping tool results."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        b.get("text", "") for b in content
+        if isinstance(b, dict) and b.get("type") == "text"
+    )
+
+
 def _is_context_overflow(error_str_lower: str) -> bool:
     if "[context_overflow]" in error_str_lower:
         return True
@@ -325,6 +349,11 @@ class AgentStreamExecutor:
         # This run's user query, the anchor callers use to find the messages
         # the run added (see run_start_index).
         self.run_user_message = None
+        # Images attached to the query, sent with it only while this run lasts
+        # (see _run_image_blocks); never written into self.messages.
+        self._run_images: Optional[List[Dict[str, Any]]] = None
+        self._run_images_disabled = False
+        self._images_in_request = False
         
         # Tool failure tracking for retry protection
         self.tool_failure_history = []  # List of (tool_name, args_hash, success) tuples
@@ -976,6 +1005,8 @@ class AgentStreamExecutor:
             ]
         }
         self.messages.append(self.run_user_message)
+        self._run_images = None
+        self._run_images_disabled = False
 
         # Trim context ONCE before the agent loop starts, not during tool steps.
         # This ensures tool_use/tool_result chains created during the current run
@@ -1688,6 +1719,7 @@ class AgentStreamExecutor:
 
         # Prepare messages
         messages = self._prepare_messages()
+        sent_images = getattr(self, "_images_in_request", False)
         turns = self._identify_complete_turns()
         logger.info(f"Sending {len(messages)} messages ({len(turns)} turns) to LLM")
 
@@ -1921,6 +1953,21 @@ class AgentStreamExecutor:
         except Exception as e:
             error_str = str(e)
             error_str_lower = error_str.lower()
+
+            # The model may not accept images after all. Retry without them before
+            # the classification below, which could read the rejection as a broken
+            # history and reset the context; the vision tool still covers the images.
+            if sent_images and not any(m in error_str_lower for m in _RETRYABLE_MARKERS):
+                self._run_images_disabled = True
+                logger.warning(f"[Agent] Request with attached images failed, retrying without them: {e}")
+                return self._call_llm_stream(
+                    retry_on_empty=retry_on_empty,
+                    retry_count=retry_count,
+                    max_retries=max_retries,
+                    _overflow_stage=_overflow_stage,
+                    _on_fallback=_on_fallback,
+                    _exhausted=_exhausted,
+                )
             
             # Context overflow is non-retryable and needs the working context reset.
             is_context_overflow = _is_context_overflow(error_str_lower)
@@ -1983,11 +2030,7 @@ class AgentStreamExecutor:
             is_rate_limit = '429' in error_str_lower or 'rate limit' in error_str_lower
             
             # Check if error is retryable (timeout, connection, server busy, etc.)
-            is_retryable = any(keyword in error_str_lower for keyword in [
-                'timeout', 'timed out', 'connection', 'network', 
-                'rate limit', 'overloaded', 'unavailable', 'busy', 'retry',
-                '429', '500', '502', '503', '504', '512'
-            ])
+            is_retryable = any(keyword in error_str_lower for keyword in _RETRYABLE_MARKERS)
             
             # A fallback link gets a single attempt. Giving every link the
             # primary's full retry budget would multiply the wait by the chain
@@ -3055,4 +3098,56 @@ class AgentStreamExecutor:
         not as a message. The AgentLLMModel will handle this.
         """
         # Don't add system message here - it will be handled separately by the LLM adapter
-        return self.messages
+        images = self._run_image_blocks()
+        self._images_in_request = False
+        if "vision" not in (self.tools or {}):
+            return self.messages
+
+        prepared = []
+        for msg in self.messages:
+            content = msg.get("content")
+            if msg is self.run_user_message and images and isinstance(content, list):
+                msg = {**msg, "content": content + images}
+                self._images_in_request = True
+            elif msg.get("role") == "user" and _IMAGE_MARKER_RE.search(_user_text(content)):
+                # A model that answered earlier images directly would otherwise
+                # describe one it no longer (or never) received.
+                if isinstance(content, list):
+                    msg = {**msg, "content": content + [{"type": "text", "text": _IMAGE_NOT_ATTACHED}]}
+                else:
+                    msg = {**msg, "content": f"{content}\n{_IMAGE_NOT_ATTACHED}"}
+            prepared.append(msg)
+        return prepared
+
+    def _run_image_blocks(self) -> List[Dict[str, Any]]:
+        """Image blocks for the query's attached images, when the main model
+        would be the one analyzing them anyway (see Vision.runs_on_main_model).
+
+        Checked per request because a fallback can switch the model mid-run.
+        Later runs only see the "[图片: path]" text, so the image never piles
+        up in the history.
+        """
+        if self._run_images_disabled or self.run_user_message is None:
+            return []
+        vision = (self.tools or {}).get("vision")
+        if vision is None or not hasattr(vision, "runs_on_main_model"):
+            return []
+        vision.model = self.model
+        try:
+            if not vision.runs_on_main_model():
+                return []
+        except Exception as e:
+            logger.debug(f"[Agent] Native image input skipped: {e}")
+            return []
+
+        if self._run_images is None:
+            self._run_images = []
+            for ref in _IMAGE_MARKER_RE.findall(_user_text(self.run_user_message.get("content"))):
+                ref = ref.strip().strip("'\"")
+                try:
+                    self._run_images.append(vision._build_image_content(ref))
+                except Exception as e:
+                    logger.warning(f"[Agent] Cannot attach image {ref}: {e}")
+            if self._run_images:
+                logger.info(f"[Agent] Sending {len(self._run_images)} image(s) to the main model directly")
+        return self._run_images

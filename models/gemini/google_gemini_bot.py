@@ -332,8 +332,14 @@ class GoogleGeminiBot(Bot):
                     "parts": [{"text": system_prompt}]
                 }
             
+            # "[图片: path]" markers are inlined for the latest user message only,
+            # so earlier images are not re-sent with every turn.
+            last_user_idx = max(
+                (i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1
+            )
+
             # Convert messages to Gemini format
-            for msg in messages:
+            for msg_idx, msg in enumerate(messages):
                 role = msg.get("role")
                 content = msg.get("content", "")
                 
@@ -358,7 +364,11 @@ class GoogleGeminiBot(Bot):
                 # Handle different content formats
                 parts = []
                 
-                if isinstance(content, str):
+                if isinstance(content, str) and msg_idx != last_user_idx:
+                    if content:
+                        parts.append({"text": content})
+
+                elif isinstance(content, str):
                     # Text with optional [图片: /path/to/file] markers
                     cleaned_text, image_paths = self._extract_image_paths_from_text(content)
                     if cleaned_text:
@@ -384,15 +394,11 @@ class GoogleGeminiBot(Bot):
                         block_type = block.get("type")
                         
                         if block_type == "text":
-                            # Text block with optional image markers
+                            # Agent messages: the agent attaches the current
+                            # query's images as image_url blocks itself.
                             block_text = block.get("text", "")
-                            cleaned_text, image_paths = self._extract_image_paths_from_text(block_text)
-                            if cleaned_text:
-                                parts.append({"text": cleaned_text})
-                            for image_path in image_paths:
-                                image_part = self._build_image_inline_part(image_path)
-                                if image_part:
-                                    parts.append(image_part)
+                            if block_text:
+                                parts.append({"text": block_text})
 
                         elif block_type in ["image", "image_url"]:
                             # OpenAI format: {"type":"image_url","image_url":{"url":"..."}}

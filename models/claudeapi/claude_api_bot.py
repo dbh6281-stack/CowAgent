@@ -401,6 +401,24 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             return m.group(1), m.group(2)
         return None, None
 
+    @classmethod
+    def _image_block(cls, image_url: str) -> Optional[dict]:
+        """Claude-native image block for a data URL or http(s) URL; None for a malformed data URL."""
+        if image_url.startswith("data:"):
+            media_type, b64_data = cls._parse_data_url(image_url)
+            if not b64_data:
+                return None
+            return {
+                "type": "image",
+                "source": {"type": "base64",
+                           "media_type": media_type or "image/jpeg",
+                           "data": b64_data},
+            }
+        return {
+            "type": "image",
+            "source": {"type": "url", "url": image_url},
+        }
+
     def call_vision(self, image_url: str, question: str,
                     model: Optional[str] = None,
                     max_tokens: int = 1000) -> dict:
@@ -408,22 +426,9 @@ class ClaudeAPIBot(Bot, OpenAIImage):
         try:
             actual_model = model or self._model_mapping(conf().get("model"))
 
-            # Build Claude-native image content block
-            if image_url.startswith("data:"):
-                media_type, b64_data = self._parse_data_url(image_url)
-                if not b64_data:
-                    return {"error": True, "message": "Invalid base64 data URL"}
-                image_block = {
-                    "type": "image",
-                    "source": {"type": "base64",
-                               "media_type": media_type or "image/jpeg",
-                               "data": b64_data},
-                }
-            else:
-                image_block = {
-                    "type": "image",
-                    "source": {"type": "url", "url": image_url},
-                }
+            image_block = self._image_block(image_url)
+            if image_block is None:
+                return {"error": True, "message": "Invalid base64 data URL"}
 
             data = {
                 "model": actual_model,
@@ -662,12 +667,26 @@ class ClaudeAPIBot(Bot, OpenAIImage):
         When the session switches from another model (e.g. MiniMax) to Claude,
         the in-memory history may contain thinking blocks that lack the
         ``signature`` field required by the Anthropic API, causing 400 errors.
+        OpenAI-style ``image_url`` blocks in user messages are converted to
+        Claude image blocks.
+
         We create a shallow copy so the original history is not mutated.
         """
-        if msg.get("role") != "assistant":
-            return msg
         content = msg.get("content")
         if not isinstance(content, list):
+            return msg
+        if msg.get("role") == "user":
+            if not any(isinstance(b, dict) and b.get("type") == "image_url" for b in content):
+                return msg
+            converted = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image_url":
+                    url = (block.get("image_url") or {}).get("url") or ""
+                    block = ClaudeAPIBot._image_block(url) if url else None
+                if block is not None:
+                    converted.append(block)
+            return {**msg, "content": converted}
+        if msg.get("role") != "assistant":
             return msg
         cleaned = [
             block for block in content

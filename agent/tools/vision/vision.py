@@ -37,7 +37,8 @@ from config import conf
 DEFAULT_MODEL = const.GPT_41_MINI
 DEFAULT_TIMEOUT = 180
 MAX_TOKENS = 4000
-COMPRESS_THRESHOLD = 1_048_576  # 1 MB
+COMPRESS_THRESHOLD = 3 * 1_048_576  # 3 MB; base64 stays under the common 5 MB per-image limit
+COMPRESS_MAX_DIM = "3072"  # small print on documents and drawings is unreadable much below this
 
 SUPPORTED_EXTENSIONS = {
     "jpg": "image/jpeg",
@@ -130,6 +131,7 @@ class Vision(BaseTool):
     description: str = (
         "Analyze a local image or image URL (jpg/jpeg/png) using Vision API. "
         "Can describe content, extract text, identify objects, colors, etc. "
+        "Ask for everything needed in one call."
     )
 
     params: dict = {
@@ -304,6 +306,25 @@ class Vision(BaseTool):
         if isinstance(model, str) and model.strip():
             return model.strip()
         return conf().get("model") or ""
+
+    def runs_on_main_model(self) -> bool:
+        """Whether image analysis resolves to the agent's own main model:
+        vision is on auto (or set to the main model's name) and the main model
+        supports vision. The agent then hands images to it directly."""
+        main_model = self._current_main_model()
+        if not main_model or not (self.model and hasattr(self.model, "bot")):
+            return False
+        try:
+            bot = self.model.bot
+        except Exception:
+            return False
+        if not self._main_bot_supports_vision(bot):
+            return False
+        user_model = self._resolve_user_vision_model()
+        if user_model:
+            return user_model.lower() == main_model.lower()
+        # On auto with use_linkai set, that provider's default vision model goes first.
+        return not (conf().get("use_linkai", False) and conf().get("linkai_api_key"))
 
     @staticmethod
     def _resolve_user_vision_model() -> Optional[str]:
@@ -547,9 +568,9 @@ class Vision(BaseTool):
         Resolution order:
           1. The user ticked vision for the main model in the model catalog
              (the only way to declare it for a custom provider's models).
-          2. If the bot explicitly declares `supports_vision`, trust it.
-             This lets bots opt in or out based on their own runtime
-             configuration (e.g. the currently selected model).
+          2. If the bot explicitly declares `model_supports_vision(model)` or
+             `supports_vision`, trust it. This lets bots opt in or out based on
+             the currently selected model.
           3. Otherwise, fall back to a model-name prefix heuristic: trust
              call_vision when the main model looks like an OpenAI family
              model or matches a known multimodal vendor prefix.
@@ -558,6 +579,11 @@ class Vision(BaseTool):
             return False
         if self._catalog_declares_vision():
             return True
+        # supports_vision reads global config, which misses a session's own
+        # model or an engaged fallback.
+        per_model = getattr(type(bot), "model_supports_vision", None)
+        if callable(per_model) and self._current_main_model():
+            return bool(per_model(self._current_main_model()))
         if hasattr(bot, "supports_vision"):
             return bool(getattr(bot, "supports_vision"))
         main_model = self._current_main_model().lower()
@@ -831,7 +857,7 @@ class Vision(BaseTool):
 
     @staticmethod
     def _maybe_compress(path: str) -> str:
-        """Compress image to under COMPRESS_THRESHOLD with max long-edge 1536px."""
+        """Compress image to under COMPRESS_THRESHOLD with max long-edge 3072px (2048px as fallback)."""
         file_size = os.path.getsize(path)
         if file_size <= COMPRESS_THRESHOLD:
             return path
@@ -876,9 +902,10 @@ class Vision(BaseTool):
                 return False
 
         attempts = [
-            ("1536", "85"),
-            ("1536", "70"),
-            ("1536", "50"),
+            (COMPRESS_MAX_DIM, "85"),
+            (COMPRESS_MAX_DIM, "70"),
+            ("2048", "70"),
+            ("2048", "50"),
         ]
 
         for max_dim, quality in attempts:

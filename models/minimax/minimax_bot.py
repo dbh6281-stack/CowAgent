@@ -45,8 +45,11 @@ class MinimaxBot(Bot):
     @property
     def supports_vision(self) -> bool:
         """Return whether the configured chat model accepts image or video input."""
-        model = str(self.args.get("model") or "").strip().lower()
-        return model in NATIVE_VISION_MODELS
+        return self.model_supports_vision(self.args.get("model"))
+
+    @staticmethod
+    def model_supports_vision(model_name: str) -> bool:
+        return str(model_name or "").strip().lower() in NATIVE_VISION_MODELS
 
     def reply(self, query, context: Context = None) -> Reply:
         # acquire reply content

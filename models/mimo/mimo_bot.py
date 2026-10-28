@@ -92,7 +92,11 @@ class MimoBot(Bot, OpenAICompatibleBot):
     @property
     def supports_vision(self) -> bool:
         """主模型为多模态模型时，允许 vision tool 走主 bot 通道。"""
-        return resolve_model(conf().get("model")).lower() in MULTIMODAL_MODELS
+        return self.model_supports_vision(conf().get("model"))
+
+    @staticmethod
+    def model_supports_vision(model_name: str) -> bool:
+        return resolve_model(model_name).lower() in MULTIMODAL_MODELS
 
     @staticmethod
     def _model_supports_thinking(model_name: str) -> bool:
