@@ -76,6 +76,9 @@ from channel.web.api.skills import (  # noqa: F401
     SkillsHandler, SkillUploadHandler, ToolsHandler,
     _install_skill_for_agent,
 )
+from channel.web.api.themes import (  # noqa: F401
+    ThemeAssetHandler, ThemeImportHandler, ThemesHandler,
+)
 from channel.web.api.update import (  # noqa: F401
     UpdateCheckHandler, UpdateStartHandler, UpdateStatusHandler, VersionHandler,
 )
@@ -120,6 +123,9 @@ URLS = (
     '/api/artifacts/pin', 'ArtifactPinHandler',
     '/api/artifacts/rename', 'ArtifactRenameHandler',
     '/api/menu', 'MenuHandler',
+    '/api/themes', 'ThemesHandler',
+    '/api/themes/asset', 'ThemeAssetHandler',
+    '/api/themes/import', 'ThemeImportHandler',
     '/api/artifacts/delete', 'ArtifactDeleteHandler',
     '/api/artifacts', 'ArtifactsHandler',
     '/api/projects', 'ProjectsHandler',

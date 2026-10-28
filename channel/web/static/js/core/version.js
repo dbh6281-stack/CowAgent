@@ -42,14 +42,19 @@ function closeUpdateMenu() {
     const btn = document.getElementById('sidebar-version');
     if (menu) menu.classList.add('hidden');
     if (btn) btn.setAttribute('aria-expanded', 'false');
+    if (typeof closeColorThemeMenu === 'function') closeColorThemeMenu();
     document.removeEventListener('click', _closeUpdateMenuOnOutside);
 }
 
 function _closeUpdateMenuOnOutside(event) {
     const menu = document.getElementById('update-menu');
     const btn = document.getElementById('sidebar-version');
+    // The theme list flies out of this menu but lives outside it. Picking a
+    // theme re-renders the list, so test the dispatch path, not the live DOM.
+    const themes = document.getElementById('color-theme-menu');
     if (!menu) return;
     if (menu.contains(event.target) || (btn && btn.contains(event.target))) return;
+    if (themes && event.composedPath().includes(themes)) return;
     closeUpdateMenu();
 }
 

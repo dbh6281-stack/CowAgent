@@ -67,6 +67,7 @@
     <link rel="stylesheet" href="/assets/css/artifacts.css">
     <link rel="stylesheet" href="/assets/css/shares.css">
     <link rel="stylesheet" href="/assets/css/menu.css">
+    <link rel="stylesheet" href="/assets/css/themes.css">
     <!-- Apply theme/lang before first paint to avoid flash of unstyled content.
          This runs synchronously in <head> so the correct class is on <html>
          before any CSS or body rendering occurs. -->
@@ -97,6 +98,19 @@
         window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
         var theme = localStorage.getItem('cow_theme') || 'dark';
         if (theme === 'dark') document.documentElement.classList.add('dark');
+        // Replay the color theme's last variables (written by themes.js) so
+        // the first paint already has them.
+        try {
+            var cached = JSON.parse(localStorage.getItem('cow_theme_cache') || 'null');
+            var state = cached && cached.id === localStorage.getItem('cow_theme_id') && cached[theme === 'dark' ? 'dark' : 'light'];
+            if (state && state.vars) {
+                for (var name in state.vars) {
+                    if (name.indexOf('--cw-') === 0) document.documentElement.style.setProperty(name, state.vars[name]);
+                }
+                if (state.wallpaper) document.documentElement.setAttribute('data-wallpaper', state.wallpaper);
+                if (state.logo) document.documentElement.setAttribute('data-theme-logo', '');
+            }
+        } catch (e) {}
         if (localStorage.getItem('cow_sidebar_collapsed') === '1') {
             document.documentElement.classList.add('sidebar-collapsed');
         }
@@ -167,6 +181,8 @@
 
 <!--#include templates/modals/skill-add.html-->
 
+<!--#include templates/modals/theme-add.html-->
+
 <!--#include templates/modals/confirm-dialog.html-->
 
 <!--#include templates/modals/rename-dialog.html-->
@@ -196,6 +212,7 @@
     <script defer src="/assets/js/core/version.js"></script>
     <script defer src="/assets/js/core/i18n.js"></script>
     <script defer src="/assets/js/core/theme.js"></script>
+    <script defer src="/assets/js/core/themes.js"></script>
     <script defer src="/assets/js/core/utils.js"></script>
     <script defer src="/assets/js/core/markdown.js"></script>
     <script defer src="/assets/js/core/confirm.js"></script>

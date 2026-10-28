@@ -20,6 +20,8 @@ function applyTheme() {
         document.getElementById('hljs-light').disabled = false;
         document.getElementById('hljs-dark').disabled = true;
     }
+    // Color themes (themes.js) are console-only; the guest page has none.
+    if (typeof applyColorTheme === 'function') applyColorTheme();
     rerenderMermaidDiagrams();
 }
 
