@@ -523,7 +523,7 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
         ${faceHtml}
         <div class="min-w-0 flex-1 max-w-[85%]">
             ${speakerName}
-            <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
+            <div class="bg-panel border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                 ${evolutionBadge}
                 ${stepsHtml ? `<div class="agent-steps">${stepsHtml}</div>` : ''}
                 <div class="answer-content">${renderMarkdown(displayContent)}</div>
@@ -1020,7 +1020,7 @@ function addLoadingIndicator() {
     // once the server says who actually took the turn (an addressed teammate).
     el.innerHTML = `
         <span class="bot-face">${agentAvatarHTML(findAgent(activeAgentId), 32)}</span>
-        <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3">
+        <div class="bg-panel border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3">
             <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-primary-400 animate-pulse-dot" style="animation-delay: 0s"></span>
                 <span class="w-2 h-2 rounded-full bg-primary-400 animate-pulse-dot" style="animation-delay: 0.2s"></span>

@@ -114,7 +114,7 @@ function isCustomProviderCard(p) {
 
 function renderVendorsSection() {
     const wrap = document.createElement('div');
-    wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
+    wrap.className = 'bg-panel rounded-xl border border-slate-200 dark:border-white/10 p-6';
 
     // Custom providers always show once created (even without an api key,
     // e.g. a local vLLM/Ollama endpoint); built-in vendors show when configured.
@@ -214,7 +214,7 @@ function getCustomProviderCards() {
 function renderCapabilityCard(def) {
     const cap = modelsState.capabilities[def.id] || {};
     const wrap = document.createElement('div');
-    wrap.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
+    wrap.className = 'bg-panel rounded-xl border border-slate-200 dark:border-white/10 p-6';
     wrap.id = `models-card-${def.id}`;
 
     const headerRight = renderCapabilityHeaderTag(def, cap);
@@ -538,7 +538,7 @@ function openChatFallbackModal() {
     overlay.id = 'chat-fallback-modal-overlay';
     overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4';
     overlay.innerHTML = `
-        <div class="w-full max-w-md rounded-2xl bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 shadow-xl">
+        <div class="w-full max-w-md rounded-2xl bg-panel border border-slate-200 dark:border-white/10 shadow-xl">
             <div class="flex items-start gap-3 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-white/5">
                 <div class="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
                     <i class="fas fa-shield-halved text-primary-500 text-sm"></i>
@@ -866,7 +866,7 @@ function openSearchAddProviderPicker(missingProviders) {
     modal.id = 'search-add-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
     modal.innerHTML = `
-        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+        <div class="bg-panel rounded-xl border border-slate-200 dark:border-white/10
                     w-full max-w-md mx-4 p-6 shadow-xl">
             <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_add_provider')}</h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_add_desc')}</p>
@@ -977,7 +977,7 @@ function openSearchKeyModal(providerId, providerMeta) {
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
     modal.innerHTML = `
         <div id="search-key-modal-card"
-             class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+             class="bg-panel rounded-xl border border-slate-200 dark:border-white/10
                     w-full max-w-md mx-4 p-6 shadow-xl">
             <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_' + providerId + '_title')}</h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${descText}</p>
@@ -1133,7 +1133,7 @@ function openDeepseekSearchModal() {
     modal.id = 'search-key-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
     modal.innerHTML = `
-        <div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
+        <div class="bg-panel rounded-xl border border-slate-200 dark:border-white/10
                     w-full max-w-md mx-4 p-6 shadow-xl">
             <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_deepseek_title')}</h3>
             <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_deepseek_desc')}</p>

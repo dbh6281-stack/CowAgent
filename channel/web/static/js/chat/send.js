@@ -319,7 +319,7 @@ function startSSE(requestId, loadingEl, timestamp, replayItems, resume) {
             <span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>
             <div class="min-w-0 flex-1 max-w-[85%]">
                 ${speakerName}
-                <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
+                <div class="bg-panel border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                     <div class="agent-steps"></div>
                     <div class="answer-content sse-streaming"></div>
                     <div class="media-content"></div>
