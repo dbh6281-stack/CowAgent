@@ -39,7 +39,7 @@ Set these two keys in `config.json`, then restart the service:
 | `external_api_token` | The API key; use a long random string. It is kept while the API is off |
 
 <Note>
-  The API shares the Web Console's address and port. By default it listens on `127.0.0.1`, so only this machine can reach it. To call it from other machines, set `web_host` to `0.0.0.0` as described in [Web Console](/channels/web) and open the port. The API key is independent from the console password `web_password`.
+  The API shares the Web Console's address and port. By default it listens on `127.0.0.1`, so only this machine can reach it. To call it from other machines, change the listen address to `0.0.0.0` under **Config → Integrations → Addresses** (see [Web Console](/channels/web)) and open the port. The API key is independent from the console password `web_password`.
 </Note>
 
 ## Quick start
