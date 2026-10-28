@@ -254,6 +254,12 @@ class SchedulerTool(BaseTool):
                 "channel_type": channel_type,
                 "instance_id": instance_id,
                 "notify_session_id": notify_session_id,
+                # Each run gets its own session with no permission override, so
+                # record the conversation the task came from and the mode it had:
+                # a run must never be allowed more than that conversation.
+                "origin_session_id": context.get("session_id") or "",
+                "origin_agent_id": context.get("agent_id") or "",
+                "permission_mode": self._creator_permission_mode(context),
             }
             # silent only applies to ai_task; fixed messages always deliver
             if kwargs.get("silent", False):
@@ -626,3 +632,21 @@ class SchedulerTool(BaseTool):
             return get_agent_registry().default_agent_id
         except Exception:
             return ""
+
+    @staticmethod
+    def _creator_permission_mode(context: Context) -> str:
+        """The permission mode in force in the conversation creating the task.
+
+        Mirrors how the bridge resolves a turn's mode: a delegated turn carries
+        the delegating conversation's mode, otherwise the session's own
+        override, otherwise the instance-wide default.
+        """
+        from agent.permission import global_mode, normalize_mode
+        from agent.workspace import session_prefs
+
+        fallback = global_mode()
+        mode = context.get("delegated_permission_mode")
+        if not mode:
+            prefs = session_prefs.get_prefs(context.get("session_id"), context.get("agent_id"))
+            mode = prefs.get("permission")
+        return normalize_mode(mode, fallback) if mode else fallback
