@@ -12,7 +12,7 @@
 //
 // Built-in themes are pure color data defined below ('default' plus a few
 // palettes); they ship no images. Everything else lives in
-// ~/.cow/themes/<id>/ (theme.json + images) and is loaded at runtime via the
+// <workspace>/system/themes/<id>/ (theme.json + images) and is loaded at runtime via the
 // main process, which inlines images as data URLs.
 // ============================================================
 

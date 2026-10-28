@@ -45,7 +45,7 @@ export interface ElectronAPI {
   setLoginItemEnabled?: (
     enabled: boolean
   ) => Promise<{ ok: boolean; enabled: boolean; error: string }>
-  // Themes (bundled + user themes from ~/.cow/themes), images inlined.
+  // Themes (bundled + user themes from <workspace>/system/themes), images inlined.
   listThemes?: () => Promise<Record<string, unknown>[]>
   getThemesDir?: () => Promise<string>
   importTheme?: (opts: {

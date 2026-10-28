@@ -9,9 +9,9 @@ import zlib from 'zlib'
 //   1. Bundled themes — resources/themes/ shipped inside the app package
 //      (read-only). Present only in builds produced from a flavor; absent
 //      in the standard build.
-//   2. User themes — ~/.cow/themes/, the shared data dir users can add to
-//      (by hand, via the in-app import, or by the agent). Each theme is its
-//      own folder:
+//   2. User themes — <workspace>/system/themes/ (~/cow by default), which
+//      users can add to by hand, via the in-app import, or through the
+//      agent. Each theme is its own folder:
 //
 //        <id>/
 //          ├── theme.json      (required)
@@ -37,13 +37,29 @@ const IMAGE_MIME: Record<string, string> = {
 const WALLPAPER_FILES = ['wallpaper.jpg', 'wallpaper.jpeg', 'wallpaper.png', 'wallpaper.webp']
 const LOGO_FILES = ['logo.png', 'logo.svg', 'logo.webp', 'logo.jpg', 'logo.jpeg']
 
-function cowRoot(): string {
-  // Honor an explicit override, else default to ~/.cow to match the backend.
-  return process.env.COW_HOME || path.join(os.homedir(), '.cow')
+// The backend's data dir (holds config.json); set by setupThemeIPC.
+let getDataDir: () => string = () => ''
+
+// The Agent workspace, resolved like the backend does: config.json's
+// agent_workspace, else ~/cow.
+function workspaceDir(): string {
+  let workspace = '~/cow'
+  try {
+    const dataDir = getDataDir() || path.join(os.homedir(), '.cow')
+    const cfg = JSON.parse(fs.readFileSync(path.join(dataDir, 'config.json'), 'utf8'))
+    const value = cfg && cfg.agent_workspace
+    if (typeof value === 'string' && value.trim()) workspace = value.trim()
+  } catch {
+    // No or unreadable config: the backend falls back to ~/cow as well.
+  }
+  if (workspace === '~' || /^~[\\/]/.test(workspace)) workspace = path.join(os.homedir(), workspace.slice(1))
+  return path.resolve(workspace)
 }
 
+// <workspace>/system/themes, beside the console menu (common/state_dir.py),
+// so the web console and the Agent see the same themes.
 export function themesDir(): string {
-  return path.join(cowRoot(), THEMES_DIRNAME)
+  return path.join(workspaceDir(), 'system', THEMES_DIRNAME)
 }
 
 // Directory holding themes bundled inside the app package (read-only). In dev
@@ -223,8 +239,8 @@ function scanDir(dir: string): Record<string, unknown>[] {
 }
 
 // Merge bundled themes (read-only, shipped in the package) with user themes
-// (~/.cow/themes). Bundled themes take precedence on id conflicts so a shipped
-// theme can't be shadowed by a user folder of the same id.
+// (<workspace>/system/themes). Bundled themes take precedence on id conflicts
+// so a shipped theme can't be shadowed by a user folder of the same id.
 export function loadThemes(): Record<string, unknown>[] {
   ensureThemesDir()
   imagesSeen = new Set()
@@ -438,7 +454,7 @@ function findUserTheme(id: string): string | null {
   return null
 }
 
-// Validate and install a theme into ~/.cow/themes. Ids taken by built-in or
+// Validate and install a theme into the user themes folder. Ids taken by built-in or
 // bundled themes get a numeric suffix; an existing user theme with the same
 // id is only replaced when `overwrite` is set (else 'exists' is returned so
 // the UI can ask first).
@@ -484,7 +500,8 @@ function importTheme(source: string, overwrite: boolean, reserved: Set<string>):
   return { status: 'ok', id, name }
 }
 
-export function setupThemeIPC() {
+export function setupThemeIPC(dataDir: () => string) {
+  getDataDir = dataDir
   ipcMain.handle('themes-list', () => {
     try {
       return loadThemes()

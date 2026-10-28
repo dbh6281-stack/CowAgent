@@ -792,7 +792,7 @@ app.whenReady().then(async () => {
   })
 
   setupIPC()
-  setupThemeIPC()
+  setupThemeIPC(() => pythonBackend?.getDataDir() ?? '')
   setupHttpRelayIPC()
   setupAppIconIPC({ getWindow: () => mainWindow, getTray })
   createWindow()

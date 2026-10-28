@@ -81,7 +81,7 @@ const ThemeAddModal: React.FC<{
   const askAgent = async () => {
     if (!(await guardDocEditors())) return
     if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
-    const dir = (await window.electronAPI?.getThemesDir?.()) || '~/.cow/themes'
+    const dir = (await window.electronAPI?.getThemesDir?.()) || '~/cow/system/themes'
     onClose()
     startNewChat()
     prefillChatInput(tf('theme_agent_prompt', { dir }))
