@@ -519,10 +519,12 @@ body * {
 }
 
 /* Message list only. It follows the chat pane (a small side gutter,
-   not a locked 48rem / 768px strip) so a large window uses the width.
+   not a locked 48rem / 768px strip) so a large window uses the width,
+   capped at 64rem so ultra-wide screens keep readable line lengths.
    The composer stays on its own narrower column. */
 .chat-column {
   width: calc(100% - 3rem);
+  max-width: 64rem;
   margin-inline: auto;
 }
 
