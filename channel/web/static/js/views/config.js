@@ -241,11 +241,19 @@ function initConfigView(data) {
 
     if (!pwdInput._cfgBound) {
         pwdInput.addEventListener('focus', function() {
-            if (this.dataset.masked === '1') {
-                this.value = '';
-                this.dataset.masked = '';
-                this.classList.remove('cfg-key-masked');
-            }
+            if (this.dataset.masked !== '1') return;
+            setTimeout(() => this.setSelectionRange(this.value.length, this.value.length));
+        });
+        // The mask stands in for a password this page never sees, so it can
+        // only go as a whole: deleting empties the field, typing replaces it.
+        pwdInput.addEventListener('beforeinput', function(e) {
+            if (this.dataset.masked !== '1') return;
+            e.preventDefault();
+            this.value = e.inputType.startsWith('insert')
+                ? (e.data ?? e.dataTransfer?.getData('text/plain') ?? '')
+                : '';
+            this.dataset.masked = '';
+            this.classList.remove('cfg-key-masked');
         });
         pwdInput.addEventListener('input', function() {
             this.dataset.masked = '';
