@@ -13,8 +13,10 @@ from agent.tools.browser.chrome_launcher import ChromeLauncher  # noqa: E402 (op
 @pytest.mark.skipif(sys.platform == "win32", reason="profile discovery is POSIX only")
 @pytest.mark.parametrize("suffix", ["", "-backup", " other", " --fake-option"])
 @pytest.mark.parametrize("profile_name", ["profile with spaces", "profile --type=literal"])
-def test_native_process_discovery_matches_complete_profile(tmp_path, monkeypatch, suffix, profile_name):
-    profile = str(tmp_path / profile_name)
+def test_native_process_discovery_matches_complete_profile(tmp_path, monkeypatch, monkeypatch, suffix, profile_name):
+    monkeypatch.setenv("COLUMNS", "80")
+    # Long values expose process-list truncation on GNU ps.
+    profile = str(tmp_path / ("long-profile-" * 8) / profile_name)
     child = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)",
          "--remote-debugging-port=9999", f"--user-data-dir={profile}{suffix}", "--no-first-run"]

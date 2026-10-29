@@ -121,8 +121,13 @@ class ChromeLauncher:
         """
         if sys.platform == "win32":
             return []
-        import psutil
-
+        try:
+            listing = subprocess.run(
+                ["ps", "-Aww", "-o", "pid=,state=,command="],
+                capture_output=True, text=True, errors="replace", timeout=5,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
         own_pid = self._proc.pid if self._proc else None
         found = []
         try:
