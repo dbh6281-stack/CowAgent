@@ -876,7 +876,7 @@ class ApiClient {
 
   guestShareAction(
     slug: string,
-    action: 'confirm' | 'reset-link' | 'revoke' | 'disable' | 'enable' | 'password',
+    action: 'confirm' | 'reset-link' | 'disable' | 'enable' | 'password',
     body: Record<string, unknown> = {}
   ): Promise<{ share: GuestShare }> {
     return this.shareRequest(`/${encodeURIComponent(slug)}/${action}`, 'POST', body)

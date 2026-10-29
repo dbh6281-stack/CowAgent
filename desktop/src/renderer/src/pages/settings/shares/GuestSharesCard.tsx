@@ -20,7 +20,6 @@ import {
   RotateCw,
   Share2,
   Trash2,
-  UserX,
   Wrench,
 } from 'lucide-react'
 import { t, tf } from '../../../i18n'
@@ -40,11 +39,10 @@ const STATUS: Record<string, { dot: string; text: string; key: string }> = {
   expired: { dot: 'bg-content-tertiary', text: 'text-content-tertiary', key: 'shares_status_expired' },
 }
 
-type Action = 'confirm' | 'reset-link' | 'revoke' | 'disable' | 'enable' | 'delete'
+type Action = 'confirm' | 'reset-link' | 'disable' | 'enable' | 'delete'
 
 const CONFIRMS: Partial<Record<Action, { title: string; msg: string }>> = {
   'reset-link': { title: 'shares_reset_link', msg: 'shares_reset_link_confirm' },
-  revoke: { title: 'shares_revoke', msg: 'shares_revoke_confirm' },
   disable: { title: 'shares_disable', msg: 'shares_disable_confirm' },
   delete: { title: 'shares_delete', msg: 'shares_delete_confirm' },
 }
@@ -99,7 +97,6 @@ const ShareMenu: React.FC<{ share: GuestShare; onAction: (a: Action) => void }> 
       {open && (
         <div className="absolute right-0 top-8 z-20 w-44 py-1 rounded-btn border border-default bg-elevated shadow-lg">
           {item('reset-link', <RotateCw size={14} />, t('shares_reset_link'))}
-          {item('revoke', <UserX size={14} />, t('shares_revoke'))}
           {share.disabled
             ? item('enable', <Play size={14} />, t('shares_enable'))
             : item('disable', <Pause size={14} />, t('shares_disable'))}

@@ -242,7 +242,7 @@ def test_a_token_for_one_profile_does_not_open_another(guest_env):
     assert res.status.startswith("401")
 
 
-@pytest.mark.parametrize("action,body", [("reset-link", {}), ("revoke", {}), ("password", {"password": "new-pass-1"})])
+@pytest.mark.parametrize("action,body", [("reset-link", {}), ("password", {"password": "new-pass-1"})])
 def test_owner_actions_retire_existing_visitor_tokens(guest_env, action, body):
     app = _app()
     cookie = _owner_cookie(app)
@@ -714,7 +714,7 @@ def test_share_state_lives_in_guests_data_and_data_is_not_a_profile(guest_env):
     assert res.status.startswith("400")
 
 
-def test_pausing_and_revoking_cut_off_visitors(guest_env):
+def test_pausing_a_page_cuts_off_visitors_until_it_resumes(guest_env):
     app = _app()
     cookie = _owner_cookie(app)
     share = _create_confirmed(app, cookie)
@@ -729,13 +729,6 @@ def test_pausing_and_revoking_cut_off_visitors(guest_env):
     assert _post(app, f"{base}/message?sid={sid}", {"text": "hi"}, {"X-Guest-Token": token}).status.startswith("403")
     _post(app, "/api/guest-shares/demo/enable", {}, {"Cookie": cookie})
     assert app.request(base + "/sessions", headers={"X-Guest-Token": token}).status.startswith("200")
-
-    _post(app, "/api/guest-shares/demo/revoke", {}, {"Cookie": cookie})
-    assert app.request(base + "/sessions", headers={"X-Guest-Token": token}).status.startswith("401")
-    renewed = json.loads(_session(app, share["share_token"], {"token": token}).data)["token"]
-    assert store.verify_token(renewed, "demo", 3600) != _visitor_of(sid)
-    listed = json.loads(app.request(base + "/sessions", headers={"X-Guest-Token": renewed}).data)["sessions"]
-    assert listed == []
 
 
 def test_deleting_a_page_removes_its_link_conversations_usage_and_files(guest_env):

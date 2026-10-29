@@ -597,9 +597,6 @@ class GuestShareActionHandler:
         elif action == "reset-link":
             store.reset_link(slug)
             service.forget_profile(slug)
-        elif action == "revoke":
-            store.revoke_sessions(slug)
-            service.forget_profile(slug)
         elif action == "password":
             from config import conf
 
@@ -697,7 +694,7 @@ GUEST_URLS = (
     '/share/([A-Za-z0-9_-]{16,64})/api/file', 'GuestFileHandler',
     '/api/guest-shares', 'GuestSharesHandler',
     '/api/guest-shares/([a-z0-9][a-z0-9_-]{0,39})', 'GuestShareHandler',
-    '/api/guest-shares/([a-z0-9][a-z0-9_-]{0,39})/(confirm|reset-link|revoke|password|disable|enable)',
+    '/api/guest-shares/([a-z0-9][a-z0-9_-]{0,39})/(confirm|reset-link|password|disable|enable)',
     'GuestShareActionHandler',
     '/api/guest-shares/([a-z0-9][a-z0-9_-]{0,39})/logo', 'GuestShareLogoHandler',
     '/api/guest-shares/([a-z0-9][a-z0-9_-]{0,39})/logs', 'GuestShareLogsHandler',

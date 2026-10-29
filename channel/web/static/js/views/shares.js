@@ -486,7 +486,6 @@ function shareCardHtml(share) {
                     </button>
                     <div class="share-menu hidden" id="share-menu-${slug}">
                         <button class="share-menu-item" onclick="shareAction('${slug}', 'reset-link')"><i class="fas fa-rotate"></i>${escapeHtml(t('shares_reset_link'))}</button>
-                        <button class="share-menu-item" onclick="shareAction('${slug}', 'revoke')"><i class="fas fa-user-slash"></i>${escapeHtml(t('shares_revoke'))}</button>
                         ${share.disabled
                             ? `<button class="share-menu-item" onclick="shareAction('${slug}', 'enable')"><i class="fas fa-play"></i>${escapeHtml(t('shares_enable'))}</button>`
                             : `<button class="share-menu-item" onclick="shareAction('${slug}', 'disable')"><i class="fas fa-pause"></i>${escapeHtml(t('shares_disable'))}</button>`}
@@ -560,7 +559,6 @@ function copyShareLink(slug) {
 
 const _SHARE_CONFIRMS = {
     'reset-link': { title: 'shares_reset_link', message: 'shares_reset_link_confirm', tone: 'danger' },
-    'revoke':     { title: 'shares_revoke',     message: 'shares_revoke_confirm',     tone: 'danger' },
     'disable':    { title: 'shares_disable',    message: 'shares_disable_confirm',    tone: 'danger' },
     'delete':     { title: 'shares_delete',     message: 'shares_delete_confirm',     tone: 'danger' },
 };

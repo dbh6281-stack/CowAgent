@@ -19,8 +19,8 @@ plain indexes, so the schema only ever grows by ADD COLUMN and CREATE INDEX.
 - ``guest_usage``     questions and tokens per profile, day and visitor
 
 Visitor tokens are stateless and signed over the profile's share token,
-password hash and epoch, so resetting the link, changing the password or
-revoking sessions invalidates every token issued before.
+password hash and epoch, so resetting the link or changing the password
+invalidates every token issued before.
 
 A token names a visitor, not a conversation. Session ids issued here start
 with the visitor id, so owning one is a prefix check. Front ends that name
@@ -301,11 +301,6 @@ def confirm(slug: str, config: Dict[str, Any]) -> Dict[str, Any]:
 
 def reset_link(slug: str) -> Dict[str, Any]:
     return update_entry(slug, share_token=secrets.token_urlsafe(18))
-
-
-def revoke_sessions(slug: str) -> Dict[str, Any]:
-    entry = get_entry(slug) or {}
-    return update_entry(slug, epoch=int(entry.get("epoch") or 1) + 1)
 
 
 # --- passwords ---------------------------------------------------------------
