@@ -949,6 +949,9 @@ def test_guest_prompt_has_no_owner_context_or_real_paths(guard):
         assert owner_marker not in prompt
     assert prompt.count("</business_rules>") == 1
     assert prompt.index("Platform rules (fixed") < prompt.index("<business_rules>")
+    assert "Never disclose secrets" in prompt
+    zh = build_guest_system_prompt("演示", "友好。", tools, g.describe(), language="zh")
+    assert "不要向访客透露宿主环境的密钥" in zh
 
 
 # --- a full visitor turn -----------------------------------------------------
