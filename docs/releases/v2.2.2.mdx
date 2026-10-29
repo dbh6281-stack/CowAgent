@@ -132,7 +132,7 @@ Related docs: [Web Console - Access URL](https://docs.cowagent.ai/channels/web#a
 - **Agent initialization**: an empty identity file no longer skips onboarding, and concurrent initialization no longer overwrites existing configuration (Thanks @rudycelekli #3722, #3730); trajectory evaluation correctly checks the expected tools and execution status (Thanks @xiong-wei1 #3849, #3848).
 - **Logs and CLI**: live logs continue after the log file is truncated, and console output is kept when the data directory is not writable. The service detaches from standard input when started in the background, and fixed the process ID being lost without sufficient permissions and a corrupted update status file (Thanks @rudycelekli #3686, #3687, #3709, #3717, #3719, #3780, #3800, #3812, #3814).
 - **Config and backup**: creating the data directory concurrently no longer fails, remotely pushed configuration is written to the data directory actually in use, and skill scripts keep their executable permission after a backup is restored (Thanks @rudycelekli #3723, #3778, @c020627 #3823).
-- **Desktop client**: the bundled backend's version matches the client's (Thanks @592774447 #3839); if copying files fails during Windows installation, the files are extracted again automatically.
+- **Desktop client**: the bundled backend's version matches the client's (Thanks @592774447 #3839); if copying files fails during Windows installation, the files are extracted again automatically; fixed the log file growing until the disk filled up when the client was opened from a terminal or launcher that later exited (Thanks @ClearloveUzi7 #3860).
 
 ## 📦 How to Upgrade
 

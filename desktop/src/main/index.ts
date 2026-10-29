@@ -53,13 +53,27 @@ function initDesktopLogging(): void {
     }
   }
 
+  // When the app is launched with stdout/stderr attached to a pipe whose reader
+  // later exits (a terminal or launcher), every write fails asynchronously with
+  // EPIPE. A try/catch can't see that: it arrives as an 'error' event, and with
+  // no listener it becomes an uncaughtException — whose handler logs through
+  // console again, looping forever and filling run.log. Console output is
+  // best-effort, so swallow stream errors here.
+  for (const s of [process.stdout, process.stderr]) {
+    s?.on?.('error', () => {})
+  }
+
   // Wrap console so existing console.* calls throughout main also persist,
   // while still printing to stdout for `npm run dev`.
   const patch = (name: 'log' | 'warn' | 'error') => {
     const original = console[name].bind(console)
     console[name] = (...args: unknown[]) => {
       write(name.toUpperCase(), args)
-      original(...args)
+      try {
+        original(...args)
+      } catch {
+        // stdout/stderr unavailable
+      }
     }
   }
   patch('log')
@@ -74,12 +88,32 @@ function initDesktopLogging(): void {
     // crashReporter is best-effort; never let it block startup
   }
 
+  // Rate-limit crash logging so an error that keeps recurring (e.g. thrown from
+  // a timer) can't grow run.log without bound.
+  const CRASH_WINDOW_MS = 5000
+  const CRASH_MAX_PER_WINDOW = 20
+  let crashWindowStart = 0
+  let crashCount = 0
+  const logCrash = (...args: unknown[]) => {
+    const now = Date.now()
+    if (now - crashWindowStart > CRASH_WINDOW_MS) {
+      crashWindowStart = now
+      crashCount = 0
+    }
+    crashCount++
+    if (crashCount <= CRASH_MAX_PER_WINDOW) {
+      console.error(...args)
+    } else if (crashCount === CRASH_MAX_PER_WINDOW + 1) {
+      console.error(`[crash] too many errors, suppressing further output for ${CRASH_WINDOW_MS / 1000}s`)
+    }
+  }
+
   // Main-process JS errors that would otherwise kill the app silently.
   process.on('uncaughtException', (err) => {
-    console.error('[crash] uncaughtException:', err?.stack || err)
+    logCrash('[crash] uncaughtException:', err?.stack || err)
   })
   process.on('unhandledRejection', (reason) => {
-    console.error('[crash] unhandledRejection:', reason instanceof Error ? reason.stack : reason)
+    logCrash('[crash] unhandledRejection:', reason instanceof Error ? reason.stack : reason)
   })
 
   // Renderer/GPU/utility process crashes. These are the "white screen" and
