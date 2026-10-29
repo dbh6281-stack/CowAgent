@@ -1,11 +1,4 @@
-"""Discord file replies that point at a remote URL.
-
-In a cloud deployment the send tool publishes the file and the bridge hands the
-channel its ``https://`` URL instead of a ``file://`` path
-(``AgentBridge._create_file_reply``). ``DiscordChannel._async_send`` passed that
-URL to ``discord.File`` as a local path, so the upload failed and the user never
-got the file.
-"""
+"""Discord file replies may carry an http(s) URL instead of a local path."""
 import asyncio
 import sys
 import threading
@@ -17,6 +10,7 @@ import pytest
 from bridge.reply import Reply, ReplyType
 from channel.discord import discord_channel as mod
 from common import state_dir
+from common.media_download import DownloadResult
 
 BODY = b"%PDF-1.4 quarterly numbers"
 
@@ -102,3 +96,25 @@ def test_local_file_reply_is_unchanged(loop, tmp_path, monkeypatch):
 
     assert sends == [(None, b"hello", None)]
     assert local.exists()
+
+
+def test_remote_file_download_is_guarded(loop, tmp_path, monkeypatch):
+    seen = {}
+
+    def download_to_file(url, path, max_bytes, **kwargs):
+        seen.update(kwargs)
+        with open(path, "wb") as f:
+            f.write(BODY)
+        return DownloadResult(len(BODY), "application/pdf")
+
+    monkeypatch.setattr(mod, "download_to_file", download_to_file)
+    sends = []
+    ch = _channel(loop, sends, tmp_path, monkeypatch)
+    reply = Reply(ReplyType.FILE, "https://example.test/report.pdf")
+    reply.file_name = "report.pdf"
+
+    ch.send(reply, {"discord_channel_id": 7})
+
+    assert seen.get("guarded") is True
+    assert sends == [(None, BODY, "report.pdf")]
+    assert list(tmp_path.iterdir()) == []
