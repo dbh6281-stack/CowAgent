@@ -103,13 +103,26 @@ def assert_public_ip(ip_str: str) -> None:
         )
 
 
+def _ip_literal(hostname: str):
+    """The address when ``hostname`` is written as an IP, otherwise None."""
+    try:
+        return ipaddress.ip_address(hostname)
+    except ValueError:
+        return None
+
+
 def validate_url_safe(url: str) -> None:
     """Reject URLs that target private/loopback/link-local addresses (SSRF guard).
 
-    No-op when SSRF protection is disabled (the default). When enabled,
-    resolves the hostname to its IP address(es) and blocks any that fall
-    into non-public ranges. Also rejects URLs with no host, non-HTTP(S)
-    schemes, or hosts that fail DNS resolution.
+    No-op when SSRF protection is disabled (the default). When enabled:
+
+    - A host on ``strict_url_guard``'s domain allowlist is trusted by name.
+      Local DNS is not consulted: proxies often return a synthetic address
+      for every name, which is not the host the request will reach.
+    - Any other host is resolved and every address must be public.
+    - A URL whose host is a literal non-public IP is always refused.
+
+    Also rejects URLs with no host or a non-HTTP(S) scheme.
 
     Raises:
         ValueError: if the URL targets a disallowed address.
@@ -126,11 +139,23 @@ def validate_url_safe(url: str) -> None:
         raise ValueError("URL has no hostname")
 
     guard = _STRICT_GUARD.get()
-    if guard and guard["domains"] and not host_allowed(hostname, guard["domains"]):
-        raise ValueError(f"Host {hostname} is not in the allowed domain list")
+    ip = _ip_literal(hostname)
+    if ip is not None:
+        if _is_blocked_ip(ip):
+            raise ValueError(
+                f"URL resolves to a non-public address ({hostname}), "
+                f"request blocked for security"
+            )
+        if guard and guard["domains"] and not host_allowed(hostname, guard["domains"]):
+            raise ValueError(f"Host {hostname} is not in the allowed domain list")
+        return
+
+    if guard and guard["domains"]:
+        if not host_allowed(hostname, guard["domains"]):
+            raise ValueError(f"Host {hostname} is not in the allowed domain list")
+        return
 
     try:
-        # Resolve all addresses for the hostname.
         addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
     except socket.gaierror:
         raise ValueError(f"Cannot resolve hostname: {hostname}")
