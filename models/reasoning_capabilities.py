@@ -28,6 +28,7 @@ CLAUDE_XHIGH_MODELS = (
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-sonnet-5",
+    "claude-haiku-5",
 )
 CLAUDE_MAX_ONLY_MODELS = (
     "claude-mythos-preview",

@@ -131,13 +131,13 @@ CowAgent supports all mainstream LLM providers. **Chat, vision, image generation
 | Provider | Featured Models | Chat | Vision | Image Gen | ASR | TTS | Embedding |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | [DeepSeek](https://docs.cowagent.ai/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | | | |
-| [Claude](https://docs.cowagent.ai/models/claude) | claude-opus-5-5 / fable-5.1 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/models/openai) | gpt-6.1-sol / gpt-6 series | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Claude](https://docs.cowagent.ai/models/claude) | claude-opus-5-5 / sonnet-5-5 | ✅ | ✅ | | | | |
+| [OpenAI](https://docs.cowagent.ai/models/openai) | gpt-6.1-terra / gpt-6.1-sol | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Gemini](https://docs.cowagent.ai/models/gemini) | gemini-3.8-flash | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/models/minimax) | MiniMax-M3.1-Flash / M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [GLM](https://docs.cowagent.ai/models/glm) | glm-5.3-flash, glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [Qwen](https://docs.cowagent.ai/models/qwen) | qwen3.8-flash | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k3 | ✅ | ✅ | | | | |
+| [Kimi](https://docs.cowagent.ai/models/kimi) | kimi-k3.1-pro / kimi-k3 | ✅ | ✅ | | | | |
 | [Doubao](https://docs.cowagent.ai/models/doubao) | doubao-seed-2.1 series | ✅ | ✅ | ✅ | | | ✅ |
 | [ERNIE](https://docs.cowagent.ai/models/qianfan) | ernie-5.1 | ✅ | ✅ | | | | |
 | [MiMo](https://docs.cowagent.ai/models/mimo) | mimo-v2.6-pro / flash | ✅ | ✅ | | ✅ | ✅ | |

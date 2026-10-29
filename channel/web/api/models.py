@@ -648,7 +648,7 @@ class ModelsHandler:
         # claude-sonnet-5 stays first here (unlike the chat lists): the first
         # entry is the auto-picked vision model, and image understanding does
         # not justify the Opus price.
-        "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_OPUS_5_5, const.CLAUDE_OPUS_5, const.CLAUDE_FABLE_5_1, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
+        "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_OPUS_5_5, const.CLAUDE_SONNET_5_5, const.CLAUDE_HAIKU_5_5, const.CLAUDE_OPUS_5, const.CLAUDE_FABLE_5_1, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
         "gemini":    [const.GEMINI_38_FLASH, const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         "qianfan":   [const.ERNIE_45_TURBO_VL],
         # glm-5.3-flash is natively multimodal and dispatched as-is; the
@@ -1629,6 +1629,8 @@ class ModelsHandler:
         "qwen3.7-plus": {"context_window": 1000000},
         "qwen3.7-max": {"context_window": 1000000},
         "qwen3.6-plus": {"context_window": 128000},
+        "kimi-k3.1-pro": {"capabilities": ["text", "vision"], "context_window": 1048576, "max_output_tokens": 131072},
+        "kimi-k3.1-pro-highspeed": {"capabilities": ["text", "vision"], "context_window": 1048576, "max_output_tokens": 131072},
         "kimi-k3": {"capabilities": ["text", "vision"], "context_window": 1048576},
         "kimi-k2.7-code": {"context_window": 262144},
         "kimi-k2.7-code-highspeed": {"context_window": 262144},
@@ -1653,6 +1655,7 @@ class ModelsHandler:
         "MiniMax-Text-01": {"context_window": 1000000},
         "mimo-v2.6-pro": {"context_window": 1000000, "max_output_tokens": 131072},
         "mimo-v2.6-flash": {"context_window": 1000000, "max_output_tokens": 131072},
+        "gpt-6.1-terra": {"capabilities": ["text", "vision"], "context_window": 1050000, "max_output_tokens": 128000},
         "gpt-6.1-sol": {"context_window": 1000000, "max_output_tokens": 128000},
         "gpt-6-luna": {"context_window": 1000000, "max_output_tokens": 128000},
         "gpt-6-sol": {"context_window": 1000000, "max_output_tokens": 128000},
@@ -1669,6 +1672,8 @@ class ModelsHandler:
         "gpt-4.1-mini": {"context_window": 1047576, "max_output_tokens": 32768},
         "gpt-4o": {"context_window": 128000, "max_output_tokens": 16384},
         "claude-opus-5-5": {"context_window": 1000000, "max_output_tokens": 128000},
+        "claude-sonnet-5-5": {"context_window": 1000000, "max_output_tokens": 128000},
+        "claude-haiku-5-5": {"context_window": 1000000, "max_output_tokens": 128000},
         "claude-opus-5": {"context_window": 1000000, "max_output_tokens": 128000},
         "claude-sonnet-5": {"context_window": 1000000, "max_output_tokens": 128000},
         "claude-fable-5": {"context_window": 1000000, "max_output_tokens": 128000},
