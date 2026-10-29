@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { t } from '../i18n'
 import { product } from '@product'
-import BasicSettings, { PASSWORD_INPUT_ID } from './settings/BasicSettings'
+import BasicSettings from './settings/BasicSettings'
 import ModelsTab from './settings/ModelsTab'
 import IntegrationsTab from './settings/IntegrationsTab'
 
@@ -30,16 +30,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
     navigate({ search: next === 'basic' ? '' : `?tab=${next}` }, { replace: true })
   }
 
-  useEffect(() => {
-    if (tab !== 'basic' || !focusPassword) return
-    setFocusPassword(false)
-    const timer = setTimeout(() => {
-      const input = document.getElementById(PASSWORD_INPUT_ID)
-      input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setTimeout(() => input?.focus({ preventScroll: true }), 300)
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [tab, focusPassword])
+  const clearFocusPassword = useCallback(() => setFocusPassword(false), [])
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'basic', label: t('settings_tab_basic') },
@@ -85,6 +76,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ baseUrl, onLangChange }) =>
             baseUrl={baseUrl}
             onLangChange={onLangChange}
             onOpenModels={modelsTabHidden ? undefined : () => switchTab('models')}
+            focusPassword={focusPassword}
+            onPasswordFocused={clearFocusPassword}
           />
         ) : (
           <ModelsTab baseUrl={baseUrl} />

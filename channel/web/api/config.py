@@ -293,7 +293,14 @@ class ConfigHandler:
                 except Exception as limits_err:
                     logger.warning(f"[WebChannel] Failed to apply runtime limits: {limits_err}")
 
-            return json.dumps({"status": "success", "applied": applied, "warning": password_warning}, ensure_ascii=False)
+            result = {"status": "success", "applied": applied, "warning": password_warning}
+            # A new password voids every token signed with the old one, the
+            # caller's included; hand it one for the new password so the
+            # client that made the change stays signed in.
+            if applied.get("web_password"):
+                from channel.web.api.auth import _create_auth_token
+                result["auth_token"] = _create_auth_token()
+            return json.dumps(result, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Error updating config: {e}")
             return json.dumps({"status": "error", "message": str(e)})

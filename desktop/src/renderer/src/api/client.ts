@@ -186,6 +186,26 @@ class ApiClient {
     }
   }
 
+  // Told about every 401, so the app can bring back the login screen once the
+  // token stops working (the password was changed elsewhere, or it expired).
+  private unauthorizedListener: (() => void) | null = null
+
+  onUnauthorized(listener: (() => void) | null) {
+    this.unauthorizedListener = listener
+  }
+
+  // A password change in flight: requests answered after the backend switched
+  // passwords but before its reply hands over the new token fail with the old
+  // one, so hold their 401s until the new token is in place.
+  private passwordChange: Promise<unknown> | null = null
+
+  private noteStatus(res: Response) {
+    if (res.status !== 401) return
+    const notify = () => this.unauthorizedListener?.()
+    if (this.passwordChange) this.passwordChange.then(notify, notify)
+    else notify()
+  }
+
   // The Agent whose workspace scoped endpoints (skills/knowledge/scheduler,
   // and new chat sessions) should target. Empty means "let the backend use its
   // default Agent" — exactly the legacy single-Agent behavior, so nothing is
@@ -262,6 +282,7 @@ class ApiClient {
       },
     })
     if (!res.ok) {
+      this.noteStatus(res)
       throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     }
     return res.json()
@@ -303,6 +324,7 @@ class ApiClient {
           headers: this.authToken ? { Authorization: `Bearer ${this.authToken}` } : undefined,
         })
         if (!res.ok) {
+          this.noteStatus(res)
           // The backend returns JSON errors even on failure; surface its message
           // when present so the user sees the real reason (e.g. file too large).
           let detail = res.statusText
@@ -792,10 +814,22 @@ class ApiClient {
   }
 
   async updateConfig(updates: Record<string, unknown>): Promise<{ status: string; applied: Record<string, unknown> }> {
-    return this.request('/config', {
+    const save = this.request<{ status: string; applied: Record<string, unknown>; auth_token?: string }>('/config', {
       method: 'POST',
       body: JSON.stringify({ updates }),
+    }).then((res) => {
+      // Setting a password voids the current token; the backend returns one
+      // signed with the new password.
+      if (res.auth_token) this.setAuthToken(res.auth_token)
+      return res
     })
+    if (!('web_password' in updates)) return save
+    this.passwordChange = save
+    try {
+      return await save
+    } finally {
+      if (this.passwordChange === save) this.passwordChange = null
+    }
   }
 
   /** The OpenAI-compatible chat API: whether it is on, its key, and the Agents it serves. */
@@ -845,6 +879,7 @@ class ApiClient {
       /* empty body */
     }
     if (!res.ok || data.status === 'error') {
+      this.noteStatus(res)
       throw new ShareApiError(String(data.message || `HTTP ${res.status}`), String(data.reason || ''))
     }
     return data as T

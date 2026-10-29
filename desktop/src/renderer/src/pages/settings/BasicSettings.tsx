@@ -39,18 +39,28 @@ interface BasicSettingsProps {
   baseUrl: string
   onLangChange?: () => void
   onOpenModels?: () => void
+  // Scroll to and focus the password field once the page has loaded.
+  focusPassword?: boolean
+  onPasswordFocused?: () => void
 }
 
-export const PASSWORD_INPUT_ID = 'cfg-password'
+const PASSWORD_INPUT_ID = 'cfg-password'
 
-const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, onOpenModels }) => {
+const BasicSettings: React.FC<BasicSettingsProps> = ({
+  baseUrl,
+  onLangChange,
+  onOpenModels,
+  focusPassword,
+  onPasswordFocused,
+}) => {
   const [config, setConfig] = useState<ConfigData | null>(null)
   const [loading, setLoading] = useState(true)
   // When arriving from the context pie's "Config" action, scroll to and briefly
   // highlight the max-context-tokens field (signal set in sessionStorage).
+  // Fields only exist once the config has loaded, so wait for that.
   const [highlightBudget, setHighlightBudget] = useState(false)
   useEffect(() => {
-    if (sessionStorage.getItem('cow_focus_max_tokens') !== '1') return
+    if (loading || sessionStorage.getItem('cow_focus_max_tokens') !== '1') return
     sessionStorage.removeItem('cow_focus_max_tokens')
     const el = document.getElementById('cfg-max-tokens')
     if (el) {
@@ -60,7 +70,18 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     setHighlightBudget(true)
     const timer = setTimeout(() => setHighlightBudget(false), 2000)
     return () => clearTimeout(timer)
-  }, [])
+  }, [loading])
+
+  useEffect(() => {
+    if (loading || !focusPassword) return
+    const input = document.getElementById(PASSWORD_INPUT_ID)
+    input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const timer = setTimeout(() => {
+      input?.focus({ preventScroll: true })
+      onPasswordFocused?.()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [loading, focusPassword, onPasswordFocused])
 
   // notifications card (client-side preference, applied instantly)
   const taskNotify = useUIStore((s) => s.taskNotify)
