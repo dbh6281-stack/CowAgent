@@ -11,6 +11,7 @@ Knowledge file layout (under workspace_root):
 """
 
 import os
+import posixpath
 import re
 import asyncio
 import shutil
@@ -737,9 +738,10 @@ class KnowledgeService:
             return {"nodes": [], "links": []}
 
         nodes = {}
-        links = []
-        # Trailing "#anchor" is optional so section links still count as edges.
-        link_re = re.compile(r'\[([^\]]*)\]\(([^)#]+\.md)(?:#[^)]*)?\)', re.IGNORECASE)
+        hrefs = {}
+        # Trailing "#anchor" is optional so section links still count as edges;
+        # "<...>" is the CommonMark form for targets containing spaces.
+        link_re = re.compile(r'\[[^\]]*\]\(\s*<?([^)#<>]+?\.md)>?(?:#[^)]*)?\s*\)', re.IGNORECASE)
 
         for md_file in knowledge_path.rglob("*.[mM][dD]"):
             # as_posix() rather than str(): on Windows str() keeps the
@@ -752,37 +754,65 @@ class KnowledgeService:
             category = parts[0] if len(parts) > 1 else "root"
             title = md_file.stem.replace("-", " ").title()
             try:
-                content = md_file.read_text(encoding="utf-8")
+                # utf-8-sig: files saved by Windows editors may carry a BOM,
+                # which would otherwise hide the "# " title line.
+                content = md_file.read_text(encoding="utf-8-sig")
                 first_line = content.strip().split("\n")[0]
                 if first_line.startswith("# "):
                     title = first_line[2:].strip()
-                for _, link_target in link_re.findall(content):
-                    if "://" in link_target:
-                        continue
-                    # Links written by the index generator are percent-encoded;
-                    # they must be decoded to match a path on disk.
-                    resolved = (md_file.parent / unquote(link_target)).resolve()
-                    try:
-                        target_rel = resolved.relative_to(knowledge_path).as_posix()
-                    except ValueError:
-                        continue
-                    if target_rel != rel:
-                        links.append({"source": rel, "target": target_rel})
+                hrefs[rel] = link_re.findall(content)
             except Exception:
                 pass
             nodes[rel] = {"id": rel, "label": title, "category": category}
 
-        valid_ids = set(nodes.keys())
-        links = [l for l in links if l["source"] in valid_ids and l["target"] in valid_ids]
-        seen = set()
-        deduped = []
-        for l in links:
-            key = tuple(sorted([l["source"], l["target"]]))
-            if key not in seen:
-                seen.add(key)
-                deduped.append(l)
+        by_name = {}
+        for rel in nodes:
+            by_name.setdefault(rel.rsplit("/", 1)[-1], []).append(rel)
 
-        return {"nodes": list(nodes.values()), "links": deduped}
+        seen = set()
+        links = []
+        for rel, targets in hrefs.items():
+            for href in targets:
+                target_rel = self._resolve_graph_link(rel, href, nodes, by_name)
+                if not target_rel or target_rel == rel:
+                    continue
+                key = tuple(sorted([rel, target_rel]))
+                if key not in seen:
+                    seen.add(key)
+                    links.append({"source": rel, "target": target_rel})
+
+        return {"nodes": list(nodes.values()), "links": links}
+
+    @staticmethod
+    def _resolve_graph_link(source_rel: str, href: str, nodes: dict,
+                            by_name: dict) -> Optional[str]:
+        """Map a link found in ``source_rel`` to a page id, or None.
+
+        Resolved purely on the relative paths, never against the filesystem:
+        resolving would follow a symlinked or junctioned knowledge dir out of
+        the root and drop every edge. Accepts the same forms the document
+        viewer opens: relative to the page, relative to the knowledge root
+        (optionally ``/`` or ``knowledge/`` prefixed), or a bare filename that
+        names exactly one page.
+        """
+        # Links written by the index generator are percent-encoded; they must
+        # be decoded to match a path on disk.
+        target = unquote(href).strip().replace("\\", "/")
+        if "://" in target:
+            return None
+        candidates = []
+        if not target.startswith("/"):
+            candidates.append(posixpath.join(posixpath.dirname(source_rel), target))
+        root_rel = target.lstrip("/")
+        if root_rel.startswith("knowledge/"):
+            root_rel = root_rel[len("knowledge/"):]
+        candidates.append(root_rel)
+        for candidate in candidates:
+            candidate = posixpath.normpath(candidate)
+            if candidate in nodes:
+                return candidate
+        matches = by_name.get(posixpath.basename(target), [])
+        return matches[0] if len(matches) == 1 else None
 
     # ------------------------------------------------------------------
     # dispatch — single entry point for protocol messages
