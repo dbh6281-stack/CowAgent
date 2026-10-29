@@ -158,15 +158,17 @@ html[data-wallpaper] .absolute.bg-panel { background-color: rgb(var(--cw-panel))
 
 /* Frosted glass, only on boxes that never hold fixed-position children
    (backdrop-filter would make them the containing block for those). */
-html[data-wallpaper] #sidebar,
 html[data-wallpaper] .composer-card,
 html[data-wallpaper='glass'] .example-card {
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);
 }
-/* The sidebar stays dark in both modes; over a light wallpaper it needs more
-   body to keep its light text readable. */
-html[data-wallpaper] #sidebar { background: rgb(var(--cw-sidebar) / 0.9); }
-html.dark[data-wallpaper] #sidebar { background: rgb(var(--cw-sidebar) / 0.72); }
+/* The sidebar stays solid and dark; a theme opts into glass with a
+   translucent sidebarBg (themes.js sets the alpha and blur). */
+html[data-wallpaper] #sidebar {
+    background: rgb(var(--cw-sidebar) / var(--cw-sidebar-alpha, 1));
+    backdrop-filter: var(--cw-sidebar-blur, none);
+    -webkit-backdrop-filter: var(--cw-sidebar-blur, none);
+}
 html[data-wallpaper] .composer-card { background: rgb(var(--cw-panel) / 0.82); }
 html[data-wallpaper] .composer-card:focus-within { background: rgb(var(--cw-panel) / 0.9); }

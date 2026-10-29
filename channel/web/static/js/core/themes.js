@@ -18,6 +18,7 @@ const _CT_COLOR_KEYS = [
     'bubbleUserBg', 'bubbleUserText', 'bgBase', 'bgSurface', 'bgSurface2',
     'bgElevated', 'bgInset', 'bgInset2', 'textPrimary', 'textSecondary',
     'textTertiary', 'textDisabled', 'borderDefault', 'borderStrong', 'borderSubtle',
+    'sidebarBg',
 ];
 
 const _CT_DARK_BORDERS = {
@@ -243,6 +244,8 @@ function _ctMix(a, b, t) {
 
 const _CT_WHITE = [255, 255, 255];
 const _CT_BLACK = [0, 0, 0];
+// The sidebar's nav text (text-neutral-400).
+const _CT_SIDEBAR_TEXT = [163, 163, 163];
 
 function _ctLuminance(c) {
     const ch = (v) => {
@@ -326,9 +329,25 @@ function _ctVars(colors, darkColors, dark) {
         set('slate-700', mix(t2, t1, 0.5));
         set('slate-800', t1); set('slate-900', t1);
     }
-    // The sidebar stays dark in both appearances: take the dark palette's base.
+    // The sidebar stays dark in both appearances: the theme's sidebarBg when
+    // its light text still reads on it, else the dark palette's base. A
+    // translucent sidebarBg lets a wallpaper show through (themes.css).
+    const sidebarBg = raw('sidebarBg') || (darkColors && _ctParse(darkColors.sidebarBg));
     const darkBase = darkColors && _ctParse(darkColors.bgBase);
-    if (darkBase) set('sidebar', _ctMix(darkBase, _CT_BLACK, 0.35));
+    if (sidebarBg && _ctContrast(_CT_SIDEBAR_TEXT, sidebarBg) >= 3) {
+        set('sidebar', sidebarBg);
+        // Translucent, it must still read over the brightest wallpaper.
+        let alpha = sidebarBg[3];
+        while (alpha < 1 && _ctContrast(_CT_SIDEBAR_TEXT, _ctMix(_CT_WHITE, sidebarBg, alpha)) < 3) {
+            alpha = Math.min(1, alpha + 0.05);
+        }
+        if (alpha < 1) {
+            vars['--cw-sidebar-alpha'] = alpha.toFixed(2);
+            vars['--cw-sidebar-blur'] = 'blur(20px) saturate(1.4)';
+        }
+    } else if (darkBase) {
+        set('sidebar', _ctMix(darkBase, _CT_BLACK, 0.35));
+    }
     return vars;
 }
 
