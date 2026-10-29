@@ -1,11 +1,4 @@
-"""Slack file replies that point at a remote URL.
-
-In a cloud deployment the send tool publishes the file and the bridge hands the
-channel its ``https://`` URL instead of a ``file://`` path
-(``AgentBridge._create_file_reply``). ``SlackChannel._do_send`` passed that URL
-to ``files_upload_v2`` as a local path, so the upload failed and the user never
-got the file.
-"""
+"""Slack file replies may carry an http(s) URL instead of a local path."""
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +9,7 @@ import pytest
 from bridge.reply import Reply, ReplyType
 from channel.slack.slack_channel import SlackChannel
 from common import state_dir
+from common.media_download import DownloadResult
 
 BODY = b"%PDF-1.4 quarterly numbers"
 
@@ -77,3 +71,25 @@ def test_local_file_reply_is_unchanged(tmp_path, monkeypatch):
 
     assert uploads == [(b"hello", "notes.txt")]
     assert local.exists()
+
+
+def test_remote_file_download_is_guarded(tmp_path, monkeypatch):
+    seen = {}
+
+    def download_to_file(url, path, max_bytes, **kwargs):
+        seen.update(kwargs)
+        with open(path, "wb") as f:
+            f.write(BODY)
+        return DownloadResult(len(BODY), "application/pdf")
+
+    monkeypatch.setattr("channel.slack.slack_channel.download_to_file", download_to_file)
+    uploads = []
+    ch = _channel(uploads, tmp_path, monkeypatch)
+    reply = Reply(ReplyType.FILE, "https://example.test/report.pdf")
+    reply.file_name = "report.pdf"
+
+    ch.send(reply, {"slack_channel": "C1"})
+
+    assert seen.get("guarded") is True
+    assert uploads == [(BODY, "report.pdf")]
+    assert list(tmp_path.iterdir()) == []

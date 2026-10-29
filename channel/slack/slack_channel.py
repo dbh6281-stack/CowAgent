@@ -505,7 +505,7 @@ class SlackChannel(ChatChannel):
             downloaded = None
             try:
                 if isinstance(local, str) and local.startswith(("http://", "https://")):
-                    # Cloud deployments publish sent files and hand over their URL.
+                    # A file reply may carry an http(s) URL instead of a local path.
                     url_path = urlparse(local).path
                     downloaded = state_dir.tmp_file("slack_file", os.path.splitext(url_path)[1] or ".bin")
                     download_to_file(local, downloaded, MAX_FILE_BYTES, timeout=60,
