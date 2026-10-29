@@ -160,6 +160,35 @@ class TestJsonWithComments(_Base):
             {"path": path, "oldText": '"name": "app"', "newText": '"name": "app" // renamed later'}
         )
         self.assertEqual(result.status, "error")
+        self.assertIn("comments and trailing commas are not allowed", str(result.result))
+
+    USER_SETTINGS = '{\n  // font\n  "editor.fontSize": 14,\n}\n'
+
+    def test_edit_existing_jsonc_under_an_unknown_name(self):
+        # VS Code user settings live outside .vscode/, wrangler.json is not on
+        # the name list: the comments already in the file say how it is read.
+        for name in (os.path.join("User", "settings.json"), "wrangler.json"):
+            with self.subTest(name=name):
+                os.makedirs(os.path.dirname(self._path(name)), exist_ok=True)
+                path = self._seed(name, self.USER_SETTINGS)
+                result = self.edit.execute({"path": path, "oldText": "14", "newText": "15"})
+                self.assertEqual(result.status, "success")
+                with open(path, encoding="utf-8") as f:
+                    self.assertIn("// font", f.read())
+
+    def test_rewrite_existing_jsonc_under_an_unknown_name(self):
+        path = self._seed("turbo.json", self.USER_SETTINGS)
+        result = self.write.execute(
+            {"path": path, "content": '{\n  // tasks\n  "tasks": {},\n}\n'}
+        )
+        self.assertEqual(result.status, "success")
+
+    def test_truncated_edit_of_existing_jsonc_is_still_refused(self):
+        path = self._seed("wrangler.json", self.USER_SETTINGS)
+        result = self.edit.execute({"path": path, "oldText": "14,\n}", "newText": "14,"})
+        self.assertEqual(result.status, "error")
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.USER_SETTINGS)
 
 
 class TestHelmTemplates(_Base):
@@ -241,6 +270,24 @@ class TestHelmTemplates(_Base):
             "      - run: [\n"
         )
         result = self.write.execute({"path": self._path("ci.yml"), "content": content})
+        self.assertEqual(result.status, "error")
+
+    def test_edit_existing_template_outside_templates_dir(self):
+        # The file already fails to parse because of its template actions, so
+        # it is a template wherever it is kept.
+        path = self._seed("deployment.yaml", self.DEPLOYMENT)
+        result = self.edit.execute({
+            "path": path,
+            "oldText": "imagePullPolicy:",
+            "newText": "terminationMessagePolicy: File\n          imagePullPolicy:",
+        })
+        self.assertEqual(result.status, "success")
+
+    def test_breaking_plain_yaml_with_template_syntax_is_still_refused(self):
+        path = self._seed("values.yaml", "replicaCount: 1\n")
+        result = self.edit.execute(
+            {"path": path, "oldText": "replicaCount: 1", "newText": "replicaCount: {{- .Values.n }}\nports: ["}
+        )
         self.assertEqual(result.status, "error")
 
 

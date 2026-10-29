@@ -34,7 +34,8 @@ _JSONC_TRAILING_COMMA = re.compile(_JSON_STRING + r'|,(?=\s*[\]}])')
 
 # Go template syntax, the language of Helm charts: whitespace trimming
 # ({{- ... -}}) or a field or variable reference ({{ .Values.x }}, {{ $name }}).
-# Only looked for in YAML under a templates/ directory, where Helm keeps them.
+# Only looked for in YAML under a templates/ directory, where Helm keeps them,
+# or in a file that already failed to parse because of them.
 _GO_TEMPLATE = re.compile(r'\{\{-|-\}\}|\{\{(?:[^{}]*?[\s(])?[.$]\w')
 
 
@@ -61,7 +62,8 @@ def _check_jsonc(text: str) -> Optional[str]:
 def _is_jsonc(path: str) -> bool:
     """Whether this .json file is read as JSON with comments.
 
-    Only well-known names: anywhere else a comment is a real error - npm
+    Only well-known names, plus any file that already has comments (see
+    _pick_checker): in a strict JSON file a comment is a real error - npm
     rejects one in package.json, and so does CowAgent in its own config.json.
     """
     name = os.path.basename(path).lower()
@@ -136,26 +138,53 @@ _CHECKERS = {
 }
 
 
-def check(path: str, text: str) -> Optional[str]:
-    """Return a syntax error message for *text*, or None if it is fine.
+# The lenient reading of a format whose own tools accept more than the strict
+# parser does: JSON with comments, YAML with template actions.
+_LENIENT_CHECKERS = {
+    '.json': _check_jsonc,
+    '.yaml': _check_helm_template,
+    '.yml': _check_helm_template,
+}
 
-    None is also returned for file types we cannot check, so callers can treat
-    "no error" and "not checked" the same way.
-    """
-    ext = os.path.splitext(path)[1].lower()
-    if ext == '.json' and _is_jsonc(path):
-        checker = _check_jsonc
-    elif ext in ('.yaml', '.yml') and _is_helm_template(path):
-        checker = _check_helm_template
-    else:
-        checker = _CHECKERS.get(ext)
-    if checker is None:
-        return None
+
+def _run(checker, text: str) -> Optional[str]:
     try:
         return checker(text)
     except Exception:
         # A checker blowing up must never stop the agent from writing a file.
         return None
+
+
+def _pick_checker(path: str, old_text: Optional[str]):
+    ext = os.path.splitext(path)[1].lower()
+    strict = _CHECKERS.get(ext)
+    lenient = _LENIENT_CHECKERS.get(ext)
+    if lenient is None:
+        return strict
+    if _is_jsonc(path) if ext == '.json' else _is_helm_template(path):
+        return lenient
+    # A file that already relies on the lenient form under a name we do not
+    # know (VS Code user settings, wrangler.json, a chart kept outside
+    # templates/) is read that way by its own tool: keep checking it that way
+    # rather than lock the agent out of it.
+    if old_text and _run(strict, old_text) is not None and _run(lenient, old_text) is None:
+        return lenient
+    return strict
+
+
+def check(path: str, text: str, old_text: Optional[str] = None) -> Optional[str]:
+    """Return a syntax error message for *text*, or None if it is fine.
+
+    *old_text* is the current content of the file, if any: a file that already
+    uses comments or template actions keeps being checked leniently.
+
+    None is also returned for file types we cannot check, so callers can treat
+    "no error" and "not checked" the same way.
+    """
+    checker = _pick_checker(path, old_text)
+    if checker is None:
+        return None
+    return _run(checker, text)
 
 
 def is_blocking(path: str) -> bool:
@@ -168,14 +197,18 @@ def review(path: str, old_text: Optional[str], new_text: str) -> Tuple[Optional[
 
     :return: (blocking_error, warning) - at most one is set.
     """
-    error = check(path, new_text)
+    error = check(path, new_text, old_text)
     if error is None:
         return None, None
 
     if is_blocking(path):
+        ext = os.path.splitext(path)[1].lower()
+        hint = ""
+        if ext == '.json' and _run(_check_jsonc, new_text) is None:
+            hint = " This file is strict JSON: comments and trailing commas are not allowed."
         return (
             f"Refusing to write {os.path.basename(path)}: the content is not valid "
-            f"{os.path.splitext(path)[1].lstrip('.').upper()} ({error}). "
+            f"{ext.lstrip('.').upper()} ({error}).{hint} "
             f"The file was left unchanged - fix the content and retry."
         ), None
 
