@@ -85,15 +85,9 @@ class GuestAgent(Agent):
 
     def get_full_system_prompt(self, skill_filter=None) -> str:
         from agent.prompt.guest import build_guest_system_prompt
-        from common import i18n
 
-        try:
-            language = i18n.get_language()
-        except Exception:
-            language = "zh"
         return build_guest_system_prompt(
             tools=[t for t in self.tools if is_tool_available(t)],
-            language=language,
             **self._prompt_inputs,
         )
 
@@ -294,6 +288,19 @@ def _skill_entries(state: ShareState) -> List[Dict[str, str]]:
     return out
 
 
+def _prompt_language(cfg: Dict[str, Any]) -> str:
+    """The prompt's language: the page's own, else the instance's."""
+    language = (cfg or {}).get("language") or ""
+    if not language:
+        from common import i18n
+
+        try:
+            language = i18n.get_language()
+        except Exception:
+            language = "zh"
+    return "en" if language == "en" else "zh"
+
+
 def _fingerprint(state: ShareState, skills: List[Dict[str, str]]) -> str:
     payload = json.dumps({
         "cfg": state.effective,
@@ -371,7 +378,6 @@ class GuestService:
 
         from bridge.agent_bridge import AgentLLMModel
         from bridge.bridge import Bridge
-        from common import i18n
 
         cfg = state.effective
         guard = self.guard_for(state, session.session_id)
@@ -382,7 +388,8 @@ class GuestService:
             "description": s["description"],
             "location": f"{guard.virtual_of(s['dir']) or '/skills/' + s['name']}/{s['file']}",
         } for s in skills]
-        is_en = i18n.get_language() == "en"
+        language = _prompt_language(cfg)
+        is_en = language == "en"
         notices = [
             "You cannot run shell commands, scripts or code in this conversation."
             if is_en else "本对话中不能执行 shell 命令、脚本或代码。"
@@ -400,6 +407,7 @@ class GuestService:
                 "mounts": mounts,
                 "skills": skill_list,
                 "notices": notices,
+                "language": language,
             },
             work_dir=guard.work_dir,
         )

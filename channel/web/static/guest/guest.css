@@ -45,6 +45,19 @@
 
 #guest-toast { bottom: calc(var(--chat-composer-height, 96px) + 16px); }
 
+/* Faded in late, so a fast load never flashes it. */
+.guest-view-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    font-size: 20px;
+    color: #94a3b8;
+    animation: guest-fade-in 0.2s ease 0.15s both;
+}
+.dark .guest-view-loading { color: #64748b; }
+@keyframes guest-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
 /* An uploaded logo may be any shape; keep it in the default's square. */
 .guest-logo { background: #fff; }
 

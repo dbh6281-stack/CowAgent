@@ -74,6 +74,7 @@ export type GuestShareStatus = 'active' | 'unconfirmed' | 'password_missing' | '
 
 export interface GuestShareConfig {
   name?: string
+  language?: string
   welcome?: string
   suggested_questions?: string[]
   provider?: string

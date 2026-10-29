@@ -27,6 +27,13 @@ const SHARE_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const SHARE_LOGO_MAX = 2 * 1024 * 1024;
 const SHARE_FOOTER_TEXT = 'Powered by CowAgent';
 const SHARE_FOOTER_URL = 'https://cowagent.ai';
+// Labels are each language's own name; '' follows the visitor's browser.
+const SHARE_LANGUAGES = [
+    { value: '', label: '' },
+    { value: 'zh', label: '简体中文' },
+    { value: 'zh-Hant', label: '繁體中文' },
+    { value: 'en', label: 'English' },
+];
 
 let integrationsPublicUrl = '';
 let integrationsLanUrl = '';
@@ -653,6 +660,11 @@ function _fillShareEditor(cfg, guestMd, passwordSet) {
     document.getElementById('share-ed-footer-url').value = brand.footer_url === undefined ? SHARE_FOOTER_URL : brand.footer_url;
 
     _initShareModelPicker(cfg.model ? `${cfg.provider || ''}|${cfg.model}` : '');
+    // A new page speaks the console's language until the owner picks another.
+    const language = isNew ? currentLang : (cfg.language || '');
+    initDropdown(document.getElementById('share-ed-language'), SHARE_LANGUAGES.map(l => ({
+        value: l.value, label: l.value ? l.label : t('shares_language_auto'),
+    })), SHARE_LANGUAGES.some(l => l.value === language) ? language : '');
 }
 
 // --- Model -----------------------------------------------------------------
@@ -952,6 +964,7 @@ function saveShareEditor() {
     const cut = modelValue.indexOf('|');
     const config = Object.assign(base, {
         name: document.getElementById('share-ed-name').value.trim(),
+        language: getDropdownValue(document.getElementById('share-ed-language')),
         welcome: document.getElementById('share-ed-welcome').value.trim(),
         suggested_questions: _shareQuestions(),
         provider: modelValue ? modelValue.slice(0, cut) : '',

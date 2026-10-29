@@ -89,6 +89,7 @@ let guestInfo = null;
 // Virtual path (/work/a.png) -> signed URL, for files a reply mentions.
 const guestLinks = {};
 let guestRunning = null;
+let guestViewLoading = false;
 
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
@@ -382,6 +383,23 @@ function showWelcome(show) {
 
 function clearMessages() {
     Array.from(messagesDiv.children).forEach(node => { if (node !== welcomeScreen) node.remove(); });
+}
+
+/** A conversation is on its way: blank the view and hold sending until it
+ *  lands, so nothing typed now is wiped by the history arriving after it. */
+function showViewLoading() {
+    guestViewLoading = true;
+    clearMessages();
+    showWelcome(false);
+    const el = document.createElement('div');
+    el.className = 'guest-view-loading';
+    el.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    messagesDiv.appendChild(el);
+}
+
+function hideViewLoading() {
+    guestViewLoading = false;
+    messagesDiv.querySelectorAll('.guest-view-loading').forEach(el => el.remove());
 }
 
 // --- streaming (chat/send.js startSSE) -----------------------------------
@@ -731,7 +749,7 @@ function uploadFile(file) {
 }
 
 function sendMessage(textOverride) {
-    if (guestRunning || uploadingCount > 0) return;
+    if (guestRunning || uploadingCount > 0 || guestViewLoading) return;
     const text = (textOverride !== undefined ? textOverride : chatInput.value).trim();
     const attachments = pendingAttachments.filter(a => !a._uploading && a.path);
     if (!text && !attachments.length) return;
@@ -815,6 +833,7 @@ function loadHistory() {
     return guestApi(guestSid('/history')).then(data => {
         if (gen !== guestViewGen) return;
         guestAddLinks(data.links);
+        hideViewLoading();
         clearMessages();
         const messages = data.messages || [];
         showWelcome(!messages.some(m => m.role !== 'event') && !data.active_request_id);
@@ -920,23 +939,33 @@ function switchSession(sid) {
     leaveCurrentView();
     setSession(sid);
     renderSessionList();
-    loadHistory().catch(err => guestToast(guestErrorText(err)));
+    showViewLoading();
+    loadHistory().catch(err => { hideViewLoading(); guestToast(guestErrorText(err)); });
 }
 
 function newChat() {
     closePanelOnMobile();
+    if (guestViewLoading) return Promise.resolve();
     if (!hasMessages() && !guestRunning) {
         showWelcome(true);
         chatInput.focus();
         return Promise.resolve();
     }
-    return startNewSession().then(() => chatInput.focus()).catch(err => guestToast(guestErrorText(err)));
+    leaveCurrentView();
+    showViewLoading();
+    return startNewSession().then(() => chatInput.focus()).catch(err => {
+        guestToast(guestErrorText(err));
+        return loadHistory().catch(() => hideViewLoading());
+    });
 }
 
 function startNewSession() {
+    const gen = guestViewGen;
     return guestApi('/sessions', { method: 'POST', json: {} }).then(data => {
+        if (gen !== guestViewGen) return;
         leaveCurrentView();
         setSession(data.session_id);
+        hideViewLoading();
         clearMessages();
         showWelcome(true);
         renderSessionList();
@@ -975,14 +1004,15 @@ function deleteSession(sid) {
             guestSessions = guestSessions.filter(s => s.session_id !== sid);
             if (sid !== guestSessionId) { renderSessionList(); return; }
             const next = guestSessions[0];
+            leaveCurrentView();
+            showViewLoading();
             if (next) {
-                leaveCurrentView();
                 setSession(next.session_id);
                 renderSessionList();
                 return loadHistory();
             }
             return startNewSession();
-        }).catch(err => guestToast(guestErrorText(err)));
+        }).catch(err => { hideViewLoading(); guestToast(guestErrorText(err)); });
     });
 }
 
@@ -1326,6 +1356,7 @@ if (guestEmbedded) {
     closeBtn.addEventListener('click', () => window.parent.postMessage({ type: 'cow-guest:close' }, '*'));
 }
 
+showViewLoading();
 guestApi('/info').then(info => {
     guestInfo = info;
     renderWelcome(info);

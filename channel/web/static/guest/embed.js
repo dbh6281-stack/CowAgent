@@ -25,7 +25,7 @@
 
   // Inset from the corner so the launcher sits with the page's content
   // rather than in the screen's very corner.
-  var inset = 'max(20px,5vw)';
+  var inset = 'max(16px,4vw)';
 
   var css = [
     '.cow-guest-btn{position:fixed;' + side + ':' + inset + ';bottom:24px;width:48px;height:48px;border-radius:50%;',

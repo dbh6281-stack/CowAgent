@@ -501,6 +501,23 @@ def test_the_page_renders_with_its_own_logo_color_and_footer(guest_env):
     assert brand["footer_text"] == footer and brand["footer_url"] == "" and brand["palette"] is None
 
 
+def test_the_page_language_drives_the_page_and_the_prompt(guest_env):
+    from agent.guest.profile import normalize_config
+    from agent.guest.runtime import _prompt_language
+
+    assert normalize_config({})[0]["language"] == ""
+    cfg, notices = normalize_config({"language": "fr"})
+    assert cfg["language"] == "" and any("language" in n for n in notices)
+    assert _prompt_language({"language": "en"}) == "en"
+    assert _prompt_language({"language": "zh-Hant"}) == "zh"
+
+    app = _app()
+    cookie = _owner_cookie(app)
+    share = _create_confirmed(app, cookie, config_body={"name": "Demo", "language": "en"})
+    page = app.request(f"/share/{share['share_token']}").data.decode()
+    assert "window.__GUEST_LANG__ = 'en';" in page
+
+
 # --- password ----------------------------------------------------------------
 
 

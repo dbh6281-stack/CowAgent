@@ -199,8 +199,10 @@ class GuestPageHandler:
         ancestors = _frame_ancestors(state) if state is not None else "'self'"
         web.header("Content-Security-Policy", f"frame-ancestors {ancestors}")
         brand = _page_brand(state)
+        language = ((state.effective or {}).get("language") or "") if state is not None else ""
         html = template.render("templates/guest/page.html")
         return (html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
+                .replace("{{GUEST_LANG}}", language)
                 .replace("{{GUEST_BRAND}}", json.dumps(brand).replace("<", "\\u003c"))
                 .replace("{{GUEST_LOGO}}", brand["logo"] or "/assets/logo.jpg")
                 .replace("{{GUEST_ICON}}", brand["logo"] or "/assets/favicon.ico"))

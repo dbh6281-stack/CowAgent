@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronRight, Plus, Terminal, Upload, Wand2, X } from 'lucide-react'
-import { t, localizedLabel } from '../../../i18n'
+import { t, localizedLabel, getLang } from '../../../i18n'
 import apiClient, {
   ShareApiError,
   type GuestShare,
@@ -14,6 +14,8 @@ import {
   SHARE_DEFAULT_QUOTA,
   SHARE_FOOTER_TEXT,
   SHARE_FOOTER_URL,
+  SHARE_LANGUAGES,
+  SHARE_LANGUAGE_NAMES,
   SHARE_LOGO_MAX,
   SHARE_LOGO_TYPES,
   SHARE_MAX_QUESTIONS,
@@ -45,6 +47,7 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
   const [editing, setEditing] = useState<GuestShare | null>(null)
   const [ready, setReady] = useState(false)
   const [name, setName] = useState('')
+  const [language, setLanguage] = useState('')
   const [welcome, setWelcome] = useState('')
   const [questions, setQuestions] = useState<string[]>([])
   const [model, setModel] = useState('')
@@ -72,6 +75,9 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
   const fill = (share: GuestShare | null, cfg: GuestShareConfig, md: string) => {
     setEditing(share)
     setName(cfg.name || '')
+    // A new page speaks the console's language until the owner picks another.
+    const lang = share ? cfg.language || '' : getLang()
+    setLanguage(SHARE_LANGUAGES.includes(lang) ? lang : '')
     setWelcome(cfg.welcome || '')
     setQuestions((cfg.suggested_questions || []).slice(0, SHARE_MAX_QUESTIONS))
     setModel(cfg.model ? `${cfg.provider || ''}|${cfg.model}` : '')
@@ -193,6 +199,7 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
     const config: GuestShareConfig = {
       ...base,
       name: name.trim(),
+      language,
       welcome: welcome.trim(),
       suggested_questions: questions.map((s) => s.trim()).filter(Boolean),
       provider: model ? model.slice(0, cut) : '',
@@ -505,6 +512,15 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
                 onChange={(e) => setGuestMd(e.target.value)}
               />
             </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={t('shares_field_language')} labelTip={t('shares_field_language_tip')}>
+                <Dropdown
+                  value={language}
+                  options={SHARE_LANGUAGES.map((value) => ({ value, label: SHARE_LANGUAGE_NAMES[value] || t('shares_language_auto') }))}
+                  onChange={setLanguage}
+                />
+              </Field>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label={t('shares_field_footer')} labelTip={t('shares_field_footer_tip')}>
                 <TextInput maxLength={80} value={footerText} placeholder={t('shares_field_footer_ph')} onChange={(e) => setFooterText(e.target.value)} />

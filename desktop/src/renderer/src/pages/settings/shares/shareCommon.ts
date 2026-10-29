@@ -12,6 +12,9 @@ export const SHARE_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 export const SHARE_LOGO_MAX = 2 * 1024 * 1024
 export const SHARE_FOOTER_TEXT = 'Powered by CowAgent'
 export const SHARE_FOOTER_URL = 'https://cowagent.ai'
+/** '' follows the visitor's browser. */
+export const SHARE_LANGUAGES = ['', 'zh', 'zh-Hant', 'en']
+export const SHARE_LANGUAGE_NAMES: Record<string, string> = { zh: '简体中文', 'zh-Hant': '繁體中文', en: 'English' }
 
 export const shareConfig = (share: GuestShare): GuestShareConfig =>
   share.effective_config || share.file_config || {}

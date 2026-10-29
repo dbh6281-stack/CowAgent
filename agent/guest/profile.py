@@ -72,6 +72,8 @@ MAX_REFERENCES = 20
 
 DEFAULT_FOOTER_TEXT = "Powered by CowAgent"
 DEFAULT_FOOTER_URL = "https://cowagent.ai"
+# The page's language; empty follows the visitor's browser.
+LANGUAGES = ("", "zh", "zh-Hant", "en")
 _FOOTER_URL_RE = re.compile(r"^https?://[^\s<>\"']+$", re.IGNORECASE)
 
 
@@ -115,6 +117,7 @@ def list_slugs() -> List[str]:
 def defaults(slug: str = "") -> Dict[str, Any]:
     return {
         "name": slug,
+        "language": "",
         "welcome": "",
         "suggested_questions": [],
         "tools": list(DEFAULT_TOOLS),
@@ -189,6 +192,12 @@ def normalize_config(raw: Any, slug: str = "") -> Tuple[Dict[str, Any], List[str
     name = _str(raw.get("name"), 60)
     if name:
         cfg["name"] = name
+    language = _str(raw.get("language"), 10)
+    if language is not None:
+        if language in LANGUAGES:
+            cfg["language"] = language
+        else:
+            notices.append(f"language {language!r} is not one of zh, zh-Hant, en; following the visitor's browser")
     welcome = _str(raw.get("welcome"), 2000)
     if welcome is not None:
         cfg["welcome"] = welcome
@@ -386,7 +395,8 @@ signing key, guest.db (share links, passwords, confirmed settings, visitor
 conversations and daily usage) and sessions/ (visitor work directories).
 Leave it to the web console.
 
-config.json fields: name, welcome, suggested_questions, tools, skills,
+config.json fields: name, language (zh, zh-Hant or en; empty follows the
+visitor's browser), welcome, suggested_questions, tools, skills,
 references [{path, note}], network {enabled, allow_domains}, limits {rpm, max_turns,
 daily_tokens, run_timeout_seconds, max_upload_mb, max_work_mb,
 session_ttl_hours, daily_messages}, expires_at, access {password_required,

@@ -63,15 +63,18 @@
         if (v.indexOf('en') === 0) return 'en';
         return '';
     };
-    // A visitor's own browser speaks first; the instance default is the fallback.
+    // The page's own language, if it has one; otherwise the visitor's browser
+    // speaks first and the instance default is the fallback.
     window.__cowResolveLang__ = function() {
-        return window.__cowNormalizeLang__(localStorage.getItem('cow_lang'))
+        return window.__cowNormalizeLang__(window.__GUEST_LANG__)
+            || window.__cowNormalizeLang__(localStorage.getItem('cow_lang'))
             || window.__cowNormalizeLang__(navigator.language || (navigator.languages && navigator.languages[0]))
             || window.__cowNormalizeLang__(window.__COW_DEFAULT_LANG__)
             || 'zh';
     };
     (function() {
         window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
+        window.__GUEST_LANG__ = '{{GUEST_LANG}}';
         // Light unless the embedding site asks otherwise (?theme=dark|auto);
         // a visitor's own toggle still wins.
         var wanted = new URLSearchParams(location.search).get('theme');

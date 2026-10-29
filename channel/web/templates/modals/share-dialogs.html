@@ -116,7 +116,7 @@
                             class="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-primary-500 cursor-pointer transition-colors">
                         <i class="fas fa-chevron-right text-[10px] transition-transform duration-150"></i>
                         <span data-i18n="shares_section_more">更多设置</span>
-                        <span class="text-xs font-normal text-slate-400 dark:text-slate-500" data-i18n="shares_section_more_desc">工具、技能、参考资料、访客规则、页脚标识</span>
+                        <span class="text-xs font-normal text-slate-400 dark:text-slate-500" data-i18n="shares_section_more_desc">工具、技能、参考资料、访客规则、语言、页脚标识</span>
                     </button>
                     <div id="share-ed-more" class="hidden mt-4 space-y-5">
                         <div>
@@ -162,6 +162,21 @@
                             </label>
                             <textarea id="share-ed-guest-md" rows="6" class="share-input font-mono text-[13px] leading-relaxed"
                                       data-i18n-placeholder="shares_field_rules_ph"></textarea>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="share-label">
+                                    <span data-i18n="shares_field_language">语言</span>
+                                    <span class="cfg-tip" data-tip-key="shares_field_language_tip"><i class="fas fa-circle-question"></i></span>
+                                </label>
+                                <div id="share-ed-language" class="cfg-dropdown" tabindex="0">
+                                    <div class="cfg-dropdown-selected">
+                                        <span class="cfg-dropdown-text">--</span>
+                                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                    </div>
+                                    <div class="cfg-dropdown-menu"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
