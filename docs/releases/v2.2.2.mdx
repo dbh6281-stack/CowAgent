@@ -21,7 +21,7 @@ Share an Agent as a standalone chat page, or embed it in your website as a chat 
   <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/guest-share-embed.png" alt="Embed in a page" width="800" />
 </Frame>
 
-- **Data isolation**: the Agent serving visitors can only use the tools, skills, and references enabled for that page. It cannot access your memory, conversations, or workspace, cannot run commands, and its network requests are limited to public addresses.
+- **Data isolation**: the Agent serving visitors can only use the tools, skills, and references enabled for that page. It cannot access your memory, conversations, or workspace, cannot run commands, and its network requests are limited to public addresses. New pages start with file writing, file sending, and web search turned off.
 - **References**: select your knowledge base, or one of its categories, as read-only references, each with a note on what it is for.
 - **Access control**: supports an access password, a daily question limit per visitor, and an expiry date. Conversations can be reviewed per visitor, and a page's link can be reset, or the page paused or deleted, at any time.
 
@@ -117,6 +117,7 @@ Related docs: [Web Console - Access URL](https://docs.cowagent.ai/channels/web#a
 
 - **Scheduled task permissions**: scheduled Agent tasks keep the permission mode of the session they were created in, so tasks created in a read-only session cannot perform writes (Thanks @EddieMurphy89 #3833).
 - **Guest request protection**: network requests made on behalf of visitors always block local and private network addresses, and a guest page password cannot be the same as the console password.
+- **Console password**: newly set passwords must be at least 6 characters, with a strength hint while typing; existing passwords are not affected.
 - **Resource limits**: the download size of files returned by models is limited (Thanks @c020627 #3832).
 - **Security policy**: added a security policy and a private channel for reporting vulnerabilities.
 
@@ -125,7 +126,7 @@ Related docs: [Web Console - Access URL](https://docs.cowagent.ai/channels/web#a
 - **Chat interaction**: you can scroll up freely while a reply is being generated, the scroll-to-bottom button is aligned with the input box, and earlier messages load automatically when you scroll to the top (Thanks @LYLMagui #3785); clicking a blank part of the input area focuses the input box (Thanks @Rofds #3830).
 - **Smoothness**: fixed UI stutter when replies arrive in bursts. Off-screen messages in long sessions are no longer rendered, so typing and scrolling are smoother (Thanks @zkjqd #3792).
 - **Wide screens**: the desktop client's chat area adapts to the window width (Thanks @zkjqd #3844, @592774447 #3839).
-- **Sessions**: the context usage chart is kept after a restart (Thanks @xiao115255 #3767, @jiangch1128 #3619); titles are generated with the fallback model when the main model fails; a failed send shows the specific reason; conversation history is kept when deletion fails (Thanks @rudycelekli #3809).
+- **Sessions**: the context usage chart is kept after a restart (Thanks @xiao115255 #3767, @jiangch1128 #3619); titles are generated with the fallback model when the main model fails; a failed send shows the specific reason; conversation history is kept when deletion fails (Thanks @rudycelekli #3809); a failure to index artifacts no longer duplicates conversation history.
 - **File display**: files outside the workspace are copied into it when sent, so they display correctly in the console; images that fail to load show their file name; the desktop client's file preview can reveal the file in its folder.
 - **Knowledge graph**: fixed unresolved cross-references leaving nodes without titles and dropping every edge. Links relative to the knowledge base root, bare file names, and angle-bracket syntax are supported, as are knowledge base folders under a symlink.
 - **Console**: the running configuration is kept when saving fails, and concurrent saves of a workspace file report a conflict. Fixed workspace file refresh, editor content validation, preference saving, and the scope of request cancellation; artifacts in registered Agent workspaces are accessible, and replacing knowledge base documents is more reliable (Thanks @rudycelekli #3733, #3746, #3747, #3748, #3749, #3755, #3784, #3801, #3805).
