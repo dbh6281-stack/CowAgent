@@ -157,6 +157,17 @@ def test_custom_provider_is_hidden_by_default():
     assert cap == {"supported": False, "options": []}
 
 
+def test_gemini_4_exposes_thinking_levels():
+    cap = get_reasoning_capability("gemini", "gemini-4-argon")
+
+    assert cap["supported"] is True
+    assert cap["param"] == "thinking_level"
+    assert cap["default"] == "medium"
+    assert cap["thinking_only"] is True
+    assert _values(cap) == ["low", "medium", "high"]
+    assert normalize_reasoning_effort("gemini", "gemini-4-argon", "max") == "medium"
+
+
 def test_unsupported_provider_returns_hidden_capability():
     cap = get_reasoning_capability("gemini", "gemini-3.5-flash")
 

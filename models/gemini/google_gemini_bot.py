@@ -47,6 +47,25 @@ def _openai_usage(usage_meta) -> dict:
     }
 
 
+_THINKING_LEVEL_MODELS = ("gemini-4",)
+_THINKING_LEVELS = ("low", "medium", "high")
+
+
+def _thinking_level(model_name: str, effort) -> Optional[str]:
+    """Map the resolved reasoning effort to Gemini 4's thinkingLevel, if applicable."""
+    if not (model_name or "").lower().startswith(_THINKING_LEVEL_MODELS):
+        return None
+    return effort if effort in _THINKING_LEVELS else None
+
+
+def _request_timeout(model_name: str):
+    """(connect, read) timeout. Gemini 4 may think for several minutes before the
+    first streamed chunk, so it gets a much longer read timeout."""
+    if (model_name or "").lower().startswith(_THINKING_LEVEL_MODELS):
+        return (15, 900)
+    return 60
+
+
 # OpenAI对话模型API (可用)
 class GoogleGeminiBot(Bot):
 
@@ -60,9 +79,9 @@ class GoogleGeminiBot(Bot):
 
     @property
     def model(self):
-        model_name = conf().get("model") or "gemini-3.8-flash"
+        model_name = conf().get("model") or "gemini-4-argon"
         if model_name == "gemini":
-            model_name = "gemini-3.8-flash"
+            model_name = "gemini-4-argon"
         return model_name
 
     @property
@@ -508,6 +527,9 @@ class GoogleGeminiBot(Bot):
             gen_config = {}
             if kwargs.get("temperature") is not None:
                 gen_config["temperature"] = kwargs["temperature"]
+            thinking_level = _thinking_level(model_name, kwargs.get("reasoning_effort"))
+            if thinking_level:
+                gen_config["thinkingConfig"] = {"thinkingLevel": thinking_level}
 
             if gen_config:
                 payload["generationConfig"] = gen_config
@@ -534,7 +556,7 @@ class GoogleGeminiBot(Bot):
                 headers=headers,
                 json=payload,
                 stream=stream,
-                timeout=60
+                timeout=_request_timeout(model_name)
             )
             
             # Check HTTP status for stream mode (for non-stream, it's checked in handler)
