@@ -591,7 +591,7 @@ select_model() {
         "Claude (claude-opus-5-5, claude-sonnet-5, etc.)" \
         "OpenAI (gpt-6.1-sol, gpt-6-luna, etc.)" \
         "Gemini (gemini-3.8-flash, gemini-3.7-flash, etc.)" \
-        "MiniMax (MiniMax-M3.1-Flash, MiniMax-M3)" \
+        "MiniMax (MiniMax-M3.1-Flash, MiniMax-M3, etc.)" \
         "GLM (glm-5.3-flash, glm-5.3, etc.)" \
         "Qwen (qwen3.8-flash, qwen3.8-max, etc.)" \
         "Kimi (kimi-k3, etc.)" \

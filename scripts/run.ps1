@@ -551,7 +551,7 @@ function Select-Model {
         "Claude (claude-opus-5-5, claude-sonnet-5, etc.)",
         "Gemini (gemini-3.5-flash, gemini-3.1-pro-preview, etc.)",
         "OpenAI (gpt-6.1-sol, gpt-6-luna, etc.)",
-        "MiniMax (MiniMax-M3.1-Flash, MiniMax-M3)",
+        "MiniMax (MiniMax-M3.1-Flash, MiniMax-M3, etc.)",
         "GLM (glm-5.3-flash, glm-5.3, etc.)",
         "Qwen (qwen3.8-flash, qwen3.8-max, etc.)",
         "Doubao (doubao-seed-2.1, etc.)",

@@ -132,7 +132,7 @@ QWEN38_FLASH = "qwen3.8-flash"  # Qwen3.8 Flash - Agent recommended model (defau
 QWQ_PLUS = "qwq-plus"
 
 # MiniMax
-MINIMAX_M3_1_FLASH = "MiniMax-M3.1-Flash"  # Default, native multimodal
+MINIMAX_M3_1_FLASH = "MiniMax-M3.1-Flash"  # MiniMax M3.1 Flash - Latest (default), native multimodal, always thinking
 MINIMAX_M3 = "MiniMax-M3"  # MiniMax M3, native multimodal (vision)
 MINIMAX_M2_7 = "MiniMax-M2.7"  # MiniMax M2.7
 MINIMAX_M2_7_HIGHSPEED = "MiniMax-M2.7-highspeed"  # MiniMax M2.7 highspeed

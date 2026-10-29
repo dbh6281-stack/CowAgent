@@ -20,14 +20,14 @@ MiniMax supports text chat, image understanding, image generation, and text-to-s
 
 | Parameter | Description |
 | --- | --- |
-| `model` | `MiniMax-M3.1-Flash` (default) or `MiniMax-M3`. Existing saved model IDs and custom catalog entries remain supported. |
+| `model` | Can be `MiniMax-M3.1-Flash` (default recommendation), `MiniMax-M3`, `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, etc. |
 | `minimax_api_key` | Create one in the [MiniMax Console](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
 
-Flash uses adaptive thinking by default. Agent tool calls accept `reasoning_effort` values `low`, `medium`, `high`, `xhigh`, or `max` (the API default); Flash does not accept disabled thinking or `none`. M3 still supports disabled thinking. See the [MiniMax API reference](https://platform.minimax.io/docs/api-reference/text-openai-api).
+`MiniMax-M3.1-Flash` always thinks (thinking cannot be disabled); tune its depth with `reasoning_effort`: `low` / `medium` / `high` / `xhigh` / `max` (default `max`). `MiniMax-M3` still supports disabling thinking. See the [MiniMax API reference](https://platform.minimax.io/docs/api-reference/text-openai-api).
 
 ## Image Understanding
 
-MiniMax-M3.1-Flash and MiniMax-M3 natively accept text, image, and video input through the OpenAI-compatible chat endpoint. Once `minimax_api_key` is configured, the Agent's Vision tool uses the selected native multimodal model. The existing M3 vision fallback remains available.
+MiniMax-M3.1-Flash and MiniMax-M3 natively accept text, image, and video input through the OpenAI-compatible chat endpoint. Once `minimax_api_key` is configured, the Agent's Vision tool automatically uses a MiniMax multimodal model for image requests, with no need to specify a separate vision model.
 
 ## Image Generation
 
