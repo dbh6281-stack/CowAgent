@@ -53,7 +53,7 @@ const GUEST_TEXT = {
         voice_unavailable: '語音輸入暫不可用',
     },
     en: {
-        placeholder: 'Message. Enter to send, Shift + Enter for a new line',
+        placeholder: 'Message, Shift + Enter for a new line',
         new_chat: 'New chat', attach: 'Upload files', stop: 'Stop',
         gate_subtitle: 'Enter the access password', gate_btn: 'Continue', password: 'Password',
         password_wrong: 'Wrong password, please try again', locked: 'Too many attempts, please try again later',

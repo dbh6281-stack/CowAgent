@@ -5,7 +5,8 @@
  *
  * Optional: data-color (color behind the fold icon while open), data-position
  * ("right" or "left"), data-theme ("light", "dark" or "auto" to follow the
- * system; defaults to light). The launcher shows the page's logo.
+ * system; defaults to light), data-open ("true" opens the window once the
+ * page loads). The launcher shows the page's logo.
  *
  * The chat runs in an iframe on the CowAgent origin, so the host page never
  * sees the visitor token. The host's origin must be listed in the profile's
@@ -22,6 +23,7 @@
   var side = script.getAttribute('data-position') === 'left' ? 'left' : 'right';
   var theme = script.getAttribute('data-theme');
   if (theme !== 'dark' && theme !== 'auto') theme = '';
+  var openOnLoad = script.getAttribute('data-open') === 'true';
 
   // Inset from the corner so the launcher sits with the page's content
   // rather than in the screen's very corner.
@@ -121,6 +123,7 @@
     if (mounted) return;
     mounted = true;
     document.body.appendChild(button);
+    if (openOnLoad) setOpen(true);
   }
   if (icon.complete) mount();
   icon.addEventListener('load', mount);
