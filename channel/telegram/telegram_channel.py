@@ -608,7 +608,7 @@ class TelegramChannel(ChatChannel):
     def _download_file_reply(self, reply: Reply):
         """Fetch a remote file reply so it can be uploaded like a local one.
 
-        Cloud deployments publish sent files and hand over their URL. Returns
+        A file reply may carry an http(s) URL instead of a local path. Returns
         ``(local_reply, temp_path)``, or ``(None, None)`` if the download failed.
         """
         url = reply.content

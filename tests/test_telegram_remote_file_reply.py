@@ -1,11 +1,4 @@
-"""Telegram file replies that point at a remote URL.
-
-In a cloud deployment the send tool publishes the file and the bridge hands the
-channel its ``https://`` URL instead of a ``file://`` path
-(``AgentBridge._create_file_reply``). The FILE/VIDEO branch of
-``TelegramChannel._async_send`` opened that URL as a local path, so the upload
-failed with FileNotFoundError and the user never got the file.
-"""
+"""Telegram file replies may carry an http(s) URL instead of a local path."""
 import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +8,7 @@ import pytest
 from bridge.reply import Reply, ReplyType
 from channel.telegram import telegram_channel as mod
 from common import state_dir
+from common.media_download import DownloadResult
 
 BODY = b"%PDF-1.4 quarterly numbers"
 
@@ -101,4 +95,26 @@ def test_unreachable_remote_file_sends_nothing(loop, tmp_path, monkeypatch):
     ch.send(Reply(ReplyType.FILE, "http://127.0.0.1:9/missing.pdf"), {"telegram_chat_id": 42})
 
     assert bot.documents == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_remote_file_download_is_guarded(loop, tmp_path, monkeypatch):
+    seen = {}
+
+    def download_to_file(url, path, max_bytes, **kwargs):
+        seen.update(kwargs)
+        with open(path, "wb") as f:
+            f.write(BODY)
+        return DownloadResult(len(BODY), "application/pdf")
+
+    monkeypatch.setattr(mod, "download_to_file", download_to_file)
+    bot = _Bot()
+    ch = _channel(loop, bot, tmp_path, monkeypatch)
+    reply = Reply(ReplyType.FILE, "https://example.test/report.pdf")
+    reply.file_name = "report.pdf"
+
+    ch.send(reply, {"telegram_chat_id": 42})
+
+    assert seen.get("guarded") is True
+    assert bot.documents == [(BODY, "report.pdf")]
     assert list(tmp_path.iterdir()) == []
