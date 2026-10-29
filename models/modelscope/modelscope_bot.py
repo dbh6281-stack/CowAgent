@@ -213,12 +213,7 @@ class ModelScopeBot(Bot):
                             total_tokens = json_data["usage"].get("total_tokens", 0)
                             completion_tokens = json_data["usage"].get("completion_tokens", 0)
 
-                        # The include_usage trailer carries usage with an empty
-                        # choices list. Usage is read above, so skip the chunk
-                        # rather than indexing into it: the default only covers a
-                        # missing key, not a present-but-empty list, and the
-                        # IndexError escaped the JSONDecodeError handler below and
-                        # discarded the whole reply.
+                        # Usage-only chunks may carry an empty choices list.
                         choices = json_data.get("choices") or []
                         if not choices:
                             continue

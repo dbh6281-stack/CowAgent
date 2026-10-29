@@ -31,7 +31,7 @@ def test_mid_stream_failure_yields_error_chunk_after_partial_text():
     assert "connection reset by peer" in str(errors[0]["message"])
 
 def _usage_trailer_lines():
-    """An OpenAI-compatible include_usage stream: content, then a usage-only
+    """An unsolicited usage stream: content, then a usage-only
     trailer whose choices list is present but empty."""
     yield b'data: {"choices": [{"delta": {"content": "the full answer"}}]}'
     yield b'data: {"usage": {"total_tokens": 42, "completion_tokens": 7}, "choices": []}'
