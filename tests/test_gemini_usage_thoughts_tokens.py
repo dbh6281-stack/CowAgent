@@ -70,3 +70,28 @@ def test_missing_thinking_tokens_leave_the_answer_count_unchanged():
 
     assert _completion_tokens({"candidatesTokenCount": 10}) == 10
     assert _completion_tokens({}) == 0
+
+
+class _SyncResponse:
+    status_code = 200
+    text = ""
+
+    def __init__(self, usage):
+        self._body = {"candidates": [{"content": {"parts": [{"text": "hi"}]}, "finishReason": "STOP"}]}
+        if usage is not None:
+            self._body["usageMetadata"] = usage
+
+    def json(self):
+        return self._body
+
+
+def test_sync_response_maps_usage_to_the_openai_shape():
+    result = _bot()._handle_gemini_rest_sync_response(_SyncResponse(USAGE), "gemini-2.5-flash")
+
+    assert result["usage"] == {"prompt_tokens": 31, "completion_tokens": 50, "total_tokens": 81}
+
+
+def test_sync_response_without_usage_metadata_keeps_the_usage_empty():
+    result = _bot()._handle_gemini_rest_sync_response(_SyncResponse(None), "gemini-2.5-flash")
+
+    assert result["usage"] == {}

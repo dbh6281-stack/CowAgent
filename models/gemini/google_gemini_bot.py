@@ -33,6 +33,20 @@ def _completion_tokens(usage_meta: dict) -> int:
     return (usage_meta.get("candidatesTokenCount") or 0) + (usage_meta.get("thoughtsTokenCount") or 0)
 
 
+def _openai_usage(usage_meta) -> dict:
+    """Map a Gemini usageMetadata to the OpenAI usage shape the agent reads.
+
+    Returns {} when Gemini reported none, so the caller falls back to estimating.
+    """
+    if not isinstance(usage_meta, dict) or not usage_meta:
+        return {}
+    return {
+        "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+        "completion_tokens": _completion_tokens(usage_meta),
+        "total_tokens": usage_meta.get("totalTokenCount", 0),
+    }
+
+
 # OpenAI对话模型API (可用)
 class GoogleGeminiBot(Bot):
 
@@ -675,7 +689,7 @@ class GoogleGeminiBot(Bot):
                     "message": message_dict,
                     "finish_reason": "tool_calls" if tool_calls else "stop"
                 }],
-                "usage": data.get("usageMetadata", {}),
+                "usage": _openai_usage(data.get("usageMetadata")),
                 "safety_ratings": safety_ratings
             }
             
