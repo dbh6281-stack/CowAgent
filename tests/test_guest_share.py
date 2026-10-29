@@ -72,6 +72,9 @@ def _post(app, path, body=None, headers=None):
     return app.request(path, method="POST", headers=h, data=json.dumps(body or {}))
 
 
+ALL_TOOLS = ["read", "ls", "search_files", "write", "edit", "send", "web_search", "web_fetch", "vision", "time"]
+
+
 def _create_confirmed(app, cookie, slug="demo", config_body=None, guest_md="Answer product questions."):
     res = _post(app, "/api/guest-shares", {"slug": slug, "config": config_body or {"name": "Demo"},
                                             "guest_md": guest_md}, {"Cookie": cookie})
@@ -1002,7 +1005,7 @@ def test_a_visitor_turn_runs_confined_tools_end_to_end(guest_env, monkeypatch):
     monkeypatch.setattr(agent_bridge, "AgentLLMModel", lambda *a, **k: model)
 
     app = _app()
-    share = _create_confirmed(app, _owner_cookie(app))
+    share = _create_confirmed(app, _owner_cookie(app), config_body={"name": "Demo", "tools": ALL_TOOLS})
     token, sid = _visitor(app, share["share_token"])
     visitor = store.verify_token(token, "demo", 3600)
     state = share_mod.resolve("demo")
@@ -1064,7 +1067,7 @@ def test_a_turn_runs_without_the_web_pages(guest_env, monkeypatch):
     ])
     monkeypatch.setattr(agent_bridge, "AgentLLMModel", lambda *a, **k: model)
     app = _app()
-    _create_confirmed(app, _owner_cookie(app))
+    _create_confirmed(app, _owner_cookie(app), config_body={"name": "Demo", "tools": ALL_TOOLS})
     state = share_mod.resolve("demo")
     service = get_service()
 
@@ -1129,13 +1132,13 @@ def test_strict_url_guard_blocks_private_hosts_and_unlisted_domains(monkeypatch)
     assert not url_safety.host_allowed("example.com.evil.io", ["example.com"])
 
 
-def test_new_pages_can_search_and_fetch_the_web(guest_env):
+def test_new_pages_only_read_and_fetch_until_more_is_allowed(guest_env):
     from agent.guest.profile import defaults
 
     cfg = defaults("demo")
-    assert {"web_search", "web_fetch"} <= set(cfg["tools"])
+    assert cfg["tools"] == ["read", "ls", "search_files", "web_fetch", "vision", "time"]
     assert cfg["network"]["enabled"] is True
-    assert {"web_search", "web_fetch"} <= set(policy.offered_tools(cfg))
+    assert "web_fetch" in policy.offered_tools(cfg)
 
 
 def test_fetching_stops_when_the_work_dir_is_full(guard):

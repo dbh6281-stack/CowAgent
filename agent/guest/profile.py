@@ -47,7 +47,8 @@ TOOL_CATALOG = (
 )
 # Tools that reach the network from the host process.
 NETWORK_TOOLS = frozenset({"web_search", "web_fetch"})
-DEFAULT_TOOLS = list(TOOL_CATALOG)
+# Writing, editing and sending files and web search are opted into per page.
+DEFAULT_TOOLS = ["read", "ls", "search_files", "web_fetch", "vision", "time"]
 
 # name -> (min, max, default). For keys in UNLIMITED_WHEN_ZERO, 0 means no cap.
 LIMIT_SPECS: Dict[str, Tuple[int, int, int]] = {

@@ -17,6 +17,7 @@ import {
   SHARE_LOGO_MAX,
   SHARE_LOGO_TYPES,
   SHARE_MAX_QUESTIONS,
+  SHARE_DEFAULT_TOOLS,
   SHARE_NETWORK_TOOLS,
   SHARE_TOOLS,
   isLightColor,
@@ -55,7 +56,7 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
   const [passwordSet, setPasswordSet] = useState(false)
   const [quota, setQuota] = useState(String(SHARE_DEFAULT_QUOTA))
   const [expires, setExpires] = useState('')
-  const [tools, setTools] = useState<string[]>(SHARE_TOOLS)
+  const [tools, setTools] = useState<string[]>(SHARE_DEFAULT_TOOLS)
   const [skills, setSkills] = useState<string[]>([])
   const [refs, setRefs] = useState<{ path: string; note: string }[]>([])
   const [guestMd, setGuestMd] = useState('')
@@ -84,7 +85,7 @@ const ShareEditor: React.FC<Props> = ({ slug, focus, overview, defaultModel, onC
     const q = cfg.limits?.daily_messages
     setQuota(String(q === undefined ? SHARE_DEFAULT_QUOTA : q))
     setExpires((cfg.expires_at || '').slice(0, 10))
-    setTools(Array.isArray(cfg.tools) ? cfg.tools.slice() : SHARE_TOOLS.slice())
+    setTools(Array.isArray(cfg.tools) ? cfg.tools.slice() : SHARE_DEFAULT_TOOLS.slice())
     setSkills(Array.isArray(cfg.skills) ? cfg.skills.slice() : [])
     setRefs((cfg.references || []).map((r) => ({ path: r.path || '', note: r.note || '' })))
     setGuestMd(md)

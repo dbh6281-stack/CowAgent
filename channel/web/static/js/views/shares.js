@@ -17,7 +17,7 @@ const SHARE_TOOLS = [
     { id: 'time',         icon: 'fa-clock' },
 ];
 const SHARE_NETWORK_TOOLS = ['web_search', 'web_fetch'];
-const SHARE_DEFAULT_TOOLS = SHARE_TOOLS.map(tool => tool.id);
+const SHARE_DEFAULT_TOOLS = ['read', 'ls', 'search_files', 'web_fetch', 'vision', 'time'];
 const SHARE_MAX_QUESTIONS = 6;
 const SHARE_DEFAULT_QUOTA = 100;
 const SHARE_ORIGIN_RE = /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i;

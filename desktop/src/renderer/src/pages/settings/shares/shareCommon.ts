@@ -1,6 +1,7 @@
 import type { GuestShare, GuestShareConfig } from '../../../api/client'
 
 export const SHARE_TOOLS = ['read', 'ls', 'search_files', 'write', 'edit', 'send', 'web_search', 'web_fetch', 'vision', 'time']
+export const SHARE_DEFAULT_TOOLS = ['read', 'ls', 'search_files', 'web_fetch', 'vision', 'time']
 export const SHARE_NETWORK_TOOLS = ['web_search', 'web_fetch']
 export const SHARE_MAX_QUESTIONS = 6
 export const SHARE_DEFAULT_QUOTA = 100
