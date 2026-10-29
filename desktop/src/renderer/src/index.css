@@ -785,8 +785,13 @@ body * {
   backdrop-filter: saturate(160%) blur(8px);
   -webkit-backdrop-filter: saturate(160%) blur(8px);
 }
+/* Over a wallpaper a sticky fill reads as a band across the artwork, so the
+   day labels scroll with the list instead. */
 body[data-wallpaper='on'] .art-day-label {
-  background: color-mix(in srgb, var(--bg-base) 60%, transparent);
+  position: static;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .art-day-primary {
   display: inline-flex;

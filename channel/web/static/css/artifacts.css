@@ -119,11 +119,10 @@
     align-items: baseline;
     gap: 8px;
     padding: 16px 0 10px;
-    background: rgba(249, 250, 251, 0.92);
+    background: rgb(var(--cw-canvas) / 0.92);
     backdrop-filter: saturate(160%) blur(8px);
     -webkit-backdrop-filter: saturate(160%) blur(8px);
 }
-.dark .art-day-label { background: rgb(var(--cw-canvas) / 0.9); }
 .art-day-primary {
     font-size: 13px;
     font-weight: 600;

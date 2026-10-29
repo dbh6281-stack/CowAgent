@@ -140,6 +140,14 @@ html[data-wallpaper] #chat-composer {
     background: transparent;
 }
 html[data-wallpaper] #chat-composer { border-top-color: transparent; }
+/* A sticky fill over the artifact list would be a band across the artwork
+   too, so the day labels scroll with the list instead. */
+html[data-wallpaper] .art-day-label {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
 /* The history panel sits beside the chat, so the wallpaper runs through it
    the same way. On phones it floats over the chat and keeps a frosted fill. */
 html[data-wallpaper] .session-panel { background: transparent; }
