@@ -12,6 +12,10 @@ The Web console and the desktop app both support themes (skins). They share one 
 
 Click a theme to apply it. Themes are independent of light / dark mode, and every theme covers both.
 
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/web-console-custom-theme.png" alt="Theme list" width="800" />
+</Frame>
+
 Built-in color themes:
 
 - **Meadow** (default): fresh green
@@ -135,7 +139,9 @@ For different wallpapers per appearance, drop the top-level `wallpaper` and set 
 
 The Agent can build a theme for you. It writes the theme to `~/cow/system/themes/`, and if image generation is configured it can generate the wallpaper and logo too.
 
-The quickest way is the "Start" button next to "Let the Agent create one" in the custom theme dialog: it opens a new chat with the prompt filled in, so you only add the style you want at the end and send it. You can also attach reference images (a character or scene you like), and the Agent will base the wallpaper and logo on them.
+- **Start in one click**: click "Start" next to "Let the Agent create one" in the custom theme dialog. It opens a new chat with the prompt filled in, so you only add the style you want at the end and send it.
+- **Generate from reference images**: attach reference images when you send, such as a character, illustration or photo you like. The Agent builds the wallpaper and logo on them, keeping the character and art style consistent, and takes the theme colors from them as well.
+- **Separate light and dark wallpapers**: say "use different wallpapers for light and dark mode" in your style description to get one wallpaper for each mode.
 
 You can also send the prompt below in any chat, with the style you want on the last line. To fine-tune afterwards, such as "make the wallpaper brighter" or "switch the accent to teal", just tell the Agent; reopen the theme list to see the change.
 

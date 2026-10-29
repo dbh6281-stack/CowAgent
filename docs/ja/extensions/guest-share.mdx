@@ -18,6 +18,10 @@ description: "Agent を独立したチャットページとして公開したり
 
 「新規ゲストページ」をクリックし、入力して保存するとリンクが発行されます。
 
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/guest-share-editor.png" alt="ゲストページの編集" width="800" />
+</Frame>
+
 ### 基本情報
 
 名前、モデル、ウェルカムメッセージ、おすすめの質問。モデルを選ばない場合はグローバルの既定モデルを使います。おすすめの質問はウェルカム画面に表示され、訪問者はクリックして質問できます。
@@ -44,7 +48,15 @@ description: "Agent を独立したチャットページとして公開したり
 
 ページ一覧からリンクをコピーして共有します。リンクは `https://<アクセスアドレス>/share/<token>` の形式です。
 
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/guest-share-page.png" alt="ゲストページ" width="800" />
+</Frame>
+
 Web サイトに埋め込むには、ページの「Web ページに埋め込む」をクリックし、「埋め込みを許可するサイト」に自分のサイト（例：`https://example.com`）を追加してから、コードを Web ページの `<body>` 内に配置します。右下にチャットボタンが表示されます。ダイアログ内で埋め込み後の見た目をそのまま確認できます。
+
+<Frame>
+  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/en/guest-share-embed.png" alt="Web ページに埋め込む" width="800" />
+</Frame>
 
 ```html
 <script src="https://agent.example.com/assets/guest/embed.js"

@@ -226,6 +226,8 @@ Learn more: [Skills overview](https://docs.cowagent.ai/skills/index) · [Creatin
 
 ## 🏷 Changelog
 
+> **2026.10.30:** [v2.2.2](https://github.com/zhayujie/CowAgent/releases/tag/2.2.2) — Standalone guest pages and embeddable chat windows, custom themes, native multimodal input for the main model, new models, tool, channel and security improvements.
+
 > **2026.10.14:** [v2.2.1](https://github.com/zhayujie/CowAgent/releases/tag/2.2.1) — Artifacts center and custom menu, open Agent Chat API, prompt caching and context cost savings, tool, channel and security improvements.
 
 > **2026.09.30:** [v2.2.0](https://github.com/zhayujie/CowAgent/releases/tag/2.2.0) — Capabilities center, multi-Agent collaboration improvements, Web console rebuild, higher model cache hit rates, broad stability and security hardening.
