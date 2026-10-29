@@ -206,15 +206,21 @@ class GuestPageHandler:
                 .replace("{{GUEST_ICON}}", brand["logo"] or "/assets/favicon.ico"))
 
 
+_LAUNCHER_ICON = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "guest", "launcher.jpg")
+
+
 class GuestLogoHandler:
-    """The page's own logo. Open to anyone holding the link, as the
-    password screen shows it before the visitor is in."""
+    """The page's own logo, or the default launcher icon when it has none.
+    Open to anyone holding the link, as the password screen shows it before
+    the visitor is in."""
 
     def GET(self, share_token):
         state = _load_share(share_token, require_active=False)
         logo = branding.read_logo(state.profile.path)
         if logo is None:
-            _fail(404, "Not found")
+            with open(_LAUNCHER_ICON, "rb") as f:
+                logo = (f.read(), "image/jpeg")
         return _send_image(*logo)
 
 

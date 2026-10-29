@@ -4,7 +4,8 @@
  *           data-share-url="https://HOST/share/TOKEN" data-title="Help" defer></script>
  *
  * Optional: data-color (color behind the fold icon while open), data-position
- * ("right" or "left"). The launcher shows the page's logo.
+ * ("right" or "left"), data-theme ("light", "dark" or "auto" to follow the
+ * system; defaults to light). The launcher shows the page's logo.
  *
  * The chat runs in an iframe on the CowAgent origin, so the host page never
  * sees the visitor token. The host's origin must be listed in the profile's
@@ -19,21 +20,25 @@
   var title = script.getAttribute('data-title') || 'Chat';
   var color = script.getAttribute('data-color') || '#4ABE6E';
   var side = script.getAttribute('data-position') === 'left' ? 'left' : 'right';
+  var theme = script.getAttribute('data-theme');
+  if (theme !== 'dark' && theme !== 'auto') theme = '';
+
+  // Inset from the corner so the launcher sits with the page's content
+  // rather than in the screen's very corner.
+  var inset = 'max(20px,5vw)';
 
   var css = [
-    '.cow-guest-btn{position:fixed;' + side + ':20px;bottom:20px;width:48px;height:48px;border-radius:50%;border:none;',
-    'padding:0;cursor:pointer;z-index:2147483000;color:#fff;display:flex;align-items:center;justify-content:center;',
-    'overflow:hidden;box-shadow:0 8px 24px -8px rgba(0,0,0,.35),0 2px 6px rgba(0,0,0,.12);',
+    '.cow-guest-btn{position:fixed;' + side + ':' + inset + ';bottom:24px;width:48px;height:48px;border-radius:50%;',
+    'border:none;padding:0;cursor:pointer;z-index:2147483000;color:#fff;display:flex;align-items:center;',
+    'justify-content:center;overflow:hidden;box-shadow:0 0 15px rgba(31,35,41,.15);',
     'transition:transform .2s ease,box-shadow .2s ease}',
-    '.cow-guest-btn:hover{transform:translateY(-2px);box-shadow:0 12px 28px -8px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.12)}',
+    '.cow-guest-btn:hover{transform:translateY(-2px);box-shadow:0 4px 18px rgba(31,35,41,.22)}',
     '.cow-guest-btn img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}',
-    // The default logo is a rounded square on white; crop to the color.
-    '.cow-guest-btn img.cow-default{transform:scale(1.25)}',
     '.cow-guest-btn .cow-ico-fold{display:none}',
     '.cow-guest-btn.cow-open img{display:none}',
     '.cow-guest-btn.cow-open .cow-ico-fold{display:block}',
-    '.cow-guest-panel{position:fixed;' + side + ':20px;bottom:80px;width:400px;height:640px;',
-    'max-height:calc(100vh - 104px);border-radius:16px;overflow:hidden;z-index:2147483000;background:#fff;',
+    '.cow-guest-panel{position:fixed;' + side + ':' + inset + ';bottom:84px;width:400px;height:640px;',
+    'max-height:calc(100vh - 108px);border-radius:16px;overflow:hidden;z-index:2147483000;background:#fff;',
     'border:1px solid rgba(15,23,42,.08);box-shadow:0 24px 60px -16px rgba(0,0,0,.35);',
     'opacity:0;transform:translateY(12px) scale(.98);transform-origin:bottom ' + side + ';pointer-events:none;',
     'visibility:hidden;transition:opacity .2s ease,transform .2s ease,visibility 0s linear .2s}',
@@ -61,15 +66,10 @@
   button.innerHTML =
     '<svg class="cow-ico-fold" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" ' +
     'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/></svg>';
-  // The page's own logo, or the default one when it has none.
+  // The page's own logo, or the default launcher icon when it has none.
   var base = url.split('?')[0].replace(/\/+$/, '');
   var icon = document.createElement('img');
   icon.alt = '';
-  icon.onerror = function () {
-    icon.onerror = null;
-    icon.className = 'cow-default';
-    icon.src = base.replace(/\/share\/[^/]+$/, '') + '/assets/logo.jpg';
-  };
   icon.src = base + '/api/logo';
   button.appendChild(icon);
 
@@ -84,7 +84,7 @@
     isOpen = open;
     if (open && !frame) {
       frame = document.createElement('iframe');
-      frame.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'embed=1';
+      frame.src = url + (url.indexOf('?') === -1 ? '?' : '&') + 'embed=1' + (theme ? '&theme=' + theme : '');
       frame.title = title;
       frame.setAttribute('referrerpolicy', 'no-referrer');
       frame.setAttribute('allow', 'clipboard-write');
@@ -115,5 +115,18 @@
   });
 
   document.body.appendChild(panel);
-  document.body.appendChild(button);
+  // The launcher appears with its icon, not as a bare color dot first.
+  var mounted = false;
+  function mount() {
+    if (mounted) return;
+    mounted = true;
+    document.body.appendChild(button);
+  }
+  if (icon.complete) mount();
+  icon.addEventListener('load', mount);
+  icon.addEventListener('error', function () {
+    icon.style.display = 'none';
+    mount();
+  });
+  setTimeout(mount, 3000);
 })();

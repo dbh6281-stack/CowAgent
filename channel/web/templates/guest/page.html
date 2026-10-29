@@ -72,7 +72,14 @@
     };
     (function() {
         window.__COW_DEFAULT_LANG__ = '{{COW_DEFAULT_LANG}}';
-        var theme = localStorage.getItem('cow_theme') || 'dark';
+        // Light unless the embedding site asks otherwise (?theme=dark|auto);
+        // a visitor's own toggle still wins.
+        var wanted = new URLSearchParams(location.search).get('theme');
+        if (wanted === 'auto') {
+            wanted = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        window.__COW_DEFAULT_THEME__ = wanted === 'dark' ? 'dark' : 'light';
+        var theme = localStorage.getItem('cow_theme') || window.__COW_DEFAULT_THEME__;
         var root = document.documentElement;
         if (theme === 'dark') root.classList.add('dark');
         root.setAttribute('lang', window.__cowResolveLang__());

@@ -473,7 +473,10 @@ def test_only_raster_logos_are_accepted_and_served_as_images(guest_env):
 
     removed = app.request("/api/guest-shares/demo/logo", method="DELETE", headers={"Cookie": cookie})
     assert json.loads(removed.data)["share"]["logo_version"] == 0
-    assert app.request(f"/share/{share['share_token']}/api/logo").status.startswith("404")
+    fallback = app.request(f"/share/{share['share_token']}/api/logo")
+    assert fallback.status.startswith("200")
+    assert fallback.headers["Content-Type"] == "image/jpeg"
+    assert fallback.data != _PNG
 
 
 def test_the_page_renders_with_its_own_logo_color_and_footer(guest_env):
