@@ -301,7 +301,7 @@ const I18N = {
         config_custom_option: '自定义',
         config_custom_tip: '接口需遵循 OpenAI API 协议',
         config_security: '安全设置', config_password: '访问密码',
-        config_password_hint: '留空则不启用密码保护',
+        config_password_hint: '至少 6 位，留空则不启用密码保护',
         config_api: '对话 API', config_api_desc: '通过 OpenAI 兼容接口调用 Agent', config_api_docs: '查看文档',
         config_api_base_url: '接口地址', config_api_copy: '复制', config_api_example: '调用示例',
         config_api_key_hint: '持有 API Key 即可调用 Agent，请妥善保管',
@@ -317,6 +317,10 @@ const I18N = {
         config_permission_desc: '新会话默认使用该权限；单个会话可在输入框下方单独调整',
         config_password_changed: '密码已更新',
         config_password_cleared: '密码已清除',
+        config_password_short: '密码至少 6 位',
+        config_password_weak: '密码强度：弱，建议加长并混用大小写字母、数字和符号',
+        config_password_medium: '密码强度：中',
+        config_password_strong: '密码强度：强',
         config_password_security_warning: '密码已清空，但服务仍允许其他设备访问，任何人都可以直接打开控制台。建议重新设置密码，或在集成配置中把监听地址改为 127.0.0.1',
         skills_title: '能力', skills_desc: '管理 Agent 可以调用的内置工具、MCP 工具和技能', skills_hub_btn: '探索技能广场',
         skills_loading: '加载技能中...', skills_loading_desc: '技能加载后将显示在此处',
@@ -733,7 +737,7 @@ const I18N = {
         settings_tab_integrations: '集成配置',
         config_public_url: '访问地址', config_public_url_desc: '对外展示的地址，以及服务监听的地址',
         config_public_url_label: '展示地址',
-        config_public_url_hint: '用于接口地址、分享链接和嵌入代码。通过域名访问时可填写域名，留空自动识别',
+        config_public_url_hint: '用于接口地址、分享链接和嵌入代码，仅供展示，留空自动识别',
         config_public_url_invalid: '请填写以 http:// 或 https:// 开头的地址',
         config_listen_lan: '本机地址',
         config_listen_host: '监听地址', config_listen_apply: '保存并重启',
@@ -1118,7 +1122,7 @@ const I18N = {
         config_custom_option: '自定義',
         config_custom_tip: '介面需遵循 OpenAI API 協議',
         config_security: '安全設定', config_password: '訪問密碼',
-        config_password_hint: '留空則不啟用密碼保護',
+        config_password_hint: '至少 6 位，留空則不啟用密碼保護',
         config_api: '對話 API', config_api_desc: '透過 OpenAI 相容介面呼叫 Agent', config_api_docs: '查看文件',
         config_api_base_url: '介面位址', config_api_copy: '複製', config_api_example: '呼叫範例',
         config_api_key_hint: '持有 API Key 即可呼叫 Agent，請妥善保管',
@@ -1134,6 +1138,10 @@ const I18N = {
         config_permission_desc: '新會話預設使用該權限；單個會話可在輸入框下方單獨調整',
         config_password_changed: '密碼已更新',
         config_password_cleared: '密碼已清除',
+        config_password_short: '密碼至少 6 位',
+        config_password_weak: '密碼強度：弱，建議加長並混用大小寫字母、數字和符號',
+        config_password_medium: '密碼強度：中',
+        config_password_strong: '密碼強度：強',
         config_password_security_warning: '密碼已清空，但服務仍允許其他裝置存取，任何人都可以直接開啟控制台。建議重新設定密碼，或在整合設定中把監聽位址改為 127.0.0.1',
         skills_title: '能力', skills_desc: '管理 Agent 可以呼叫的內建工具、MCP 工具和技能', skills_hub_btn: '探索技能廣場',
         skills_loading: '載入技能中...', skills_loading_desc: '技能載入後將顯示在此處',
@@ -1546,7 +1554,7 @@ const I18N = {
         settings_tab_integrations: '整合設定',
         config_public_url: '存取位址', config_public_url_desc: '對外展示的位址，以及服務監聽的位址',
         config_public_url_label: '展示位址',
-        config_public_url_hint: '用於介面位址、分享連結和嵌入程式碼。透過網域存取時可填寫網域，留空自動識別',
+        config_public_url_hint: '用於介面位址、分享連結和嵌入程式碼，僅供展示，留空自動識別',
         config_public_url_invalid: '請填寫以 http:// 或 https:// 開頭的位址',
         config_listen_lan: '本機位址',
         config_listen_host: '監聽位址', config_listen_apply: '儲存並重啟',
@@ -1930,7 +1938,7 @@ const I18N = {
         config_custom_option: 'Custom',
         config_custom_tip: 'API must follow OpenAI protocol.',
         config_security: 'Security', config_password: 'Password',
-        config_password_hint: 'Leave empty to disable password protection',
+        config_password_hint: 'At least 6 characters; leave empty to disable password protection',
         config_api: 'Chat API', config_api_desc: 'Call your Agent through an OpenAI-compatible API', config_api_docs: 'Docs',
         config_api_base_url: 'Base URL', config_api_copy: 'Copy', config_api_example: 'Example',
         config_api_key_hint: 'Anyone with this key can use your Agent. Keep it secret.',
@@ -1946,6 +1954,10 @@ const I18N = {
         config_permission_desc: 'New chats start with this; each chat can be changed under the input box',
         config_password_changed: 'Password updated',
         config_password_cleared: 'Password cleared',
+        config_password_short: 'The password needs at least 6 characters',
+        config_password_weak: 'Strength: weak. Make it longer and mix cases, digits and symbols',
+        config_password_medium: 'Strength: medium',
+        config_password_strong: 'Strength: strong',
         config_password_security_warning: 'The password is cleared, but other devices can still reach the service and open the console without one. Set a password again, or change the listen address to 127.0.0.1 under Integrations',
         skills_title: 'Capabilities', skills_desc: 'Manage the built-in tools, MCP tools, and skills your agent can use', skills_hub_btn: 'Skill Hub',
         skills_loading: 'Loading skills...', skills_loading_desc: 'Skills will be displayed here after loading',
@@ -2362,7 +2374,7 @@ const I18N = {
         settings_tab_integrations: 'Integrations',
         config_public_url: 'Addresses', config_public_url_desc: 'The address shown to others, and where the service listens',
         config_public_url_label: 'Display address',
-        config_public_url_hint: 'Used in API URLs, share links and embed code. Enter your domain if you have one, or leave empty to detect it',
+        config_public_url_hint: 'Used in API URLs, share links and embed code. For display only; leave empty to detect it',
         config_public_url_invalid: 'Enter an address starting with http:// or https://',
         config_listen_lan: 'Reachable at',
         config_listen_host: 'Listen address', config_listen_apply: 'Save and restart',
@@ -2476,8 +2488,11 @@ let currentLang = (typeof window.__cowResolveLang__ === 'function')
             || 'zh';
     })();
 
+// An empty string is a real translation (e.g. a unit English leaves out).
 function t(key) {
-    return (I18N[currentLang] && I18N[currentLang][key]) || (I18N.en[key]) || key;
+    const own = I18N[currentLang] && I18N[currentLang][key];
+    if (typeof own === 'string') return own;
+    return typeof I18N.en[key] === 'string' ? I18N.en[key] : key;
 }
 
 // Resolve a localized label that may be either a plain string or

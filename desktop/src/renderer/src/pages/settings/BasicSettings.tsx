@@ -9,6 +9,14 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useSessionSettingsStore } from '../../store/sessionSettingsStore'
 import { Card, Field, Dropdown, Toggle, TextInput, SaveRow, MASK_RE } from './primitives'
 import { PERMISSION_META, PERMISSION_MODE_ORDER, asPermissionMode } from '../../lib/permission'
+import { passwordStrength, type PasswordStrength } from '../../lib/passwordStrength'
+
+const PW_STRENGTH_COLOR: Record<PasswordStrength, string> = {
+  short: 'text-danger',
+  weak: 'text-danger',
+  medium: 'text-warning',
+  strong: 'text-success',
+}
 
 const CustomModelPicker = product.models?.ModelPicker
 const hideProviderSelect = product.models?.hideProviderSelect === true
@@ -370,10 +378,16 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   // saved (including cleared) directly. Browser access only has the masked
   // value, where a masked string must never be saved as the real password.
   const hasRealPassword = config?.web_password !== undefined
+  const pwStrength = pwDirty && password ? passwordStrength(password) : null
 
   const savePassword = async () => {
     if (!pwDirty) return
     if (!hasRealPassword && MASK_RE.test(password)) return
+    if (pwStrength === 'short') {
+      setPwStatus(t('config_password_short'))
+      setTimeout(() => setPwStatus(''), 3000)
+      return
+    }
     try {
       await apiClient.updateConfig({ web_password: password })
       setPwStatus(password ? t('config_password_saved') : t('config_password_cleared'))
@@ -644,7 +658,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
             />
             {permStatus && <p className="text-xs text-accent mt-1">{permStatus}</p>}
           </Field>
-          <Field label={t('config_password')} hint={t('config_password_hint')}>
+          <Field label={t('config_password')} hint={pwStrength ? undefined : t('config_password_hint')}>
             <div className="relative">
               <TextInput
                 id={PASSWORD_INPUT_ID}
@@ -673,6 +687,11 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
                 {pwVisible ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
+            {pwStrength && (
+              <p className={`text-xs mt-1 ${PW_STRENGTH_COLOR[pwStrength]}`}>
+                {t(`config_password_${pwStrength}`)}
+              </p>
+            )}
           </Field>
           <SaveRow status={pwStatus} onSave={savePassword} />
         </div>

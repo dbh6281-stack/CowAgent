@@ -232,6 +232,7 @@ function initConfigView(data) {
     pwdInput.dataset.masked = maskedPwd ? '1' : '';
     pwdInput.dataset.maskedVal = maskedPwd;
     pwdInput.classList.toggle('cfg-key-masked', !!maskedPwd);
+    updatePasswordStrength('');
 
     if (maskedPwd) {
         pwdInput.placeholder = '••••••••';
@@ -254,9 +255,11 @@ function initConfigView(data) {
                 : '';
             this.dataset.masked = '';
             this.classList.remove('cfg-key-masked');
+            updatePasswordStrength(this.value.trim());
         });
         pwdInput.addEventListener('input', function() {
             this.dataset.masked = '';
+            updatePasswordStrength(this.value.trim());
         });
         pwdInput._cfgBound = true;
     }
@@ -599,6 +602,41 @@ function saveGlobalPermission(mode) {
     .catch(() => showStatus('cfg-password-status', 'config_save_error', true));
 }
 
+const PASSWORD_MIN_LENGTH = 6;
+const COMMON_PASSWORDS = new Set([
+    'password', 'passw0rd', 'password1', 'admin', 'admin123', 'administrator', 'root123',
+    'qwerty', 'qwerty123', 'iloveyou', '1q2w3e4r', 'a123456', '123456a', 'abc123456', 'woaini1314',
+]);
+const PASSWORD_SEQUENCES = ['01234567890', '9876543210', 'abcdefghijklmnopqrstuvwxyz', 'qwertyuiopasdfghjklzxcvbnm'];
+const PASSWORD_STRENGTH_COLOR = {
+    short: 'text-red-500', weak: 'text-red-500', medium: 'text-amber-500', strong: 'text-primary-500',
+};
+
+// A rough hint while typing, not a guarantee: length and character variety,
+// with common and keyboard-run passwords always rated weak.
+function passwordStrength(pwd) {
+    if (pwd.length < PASSWORD_MIN_LENGTH) return 'short';
+    const lower = pwd.toLowerCase();
+    if (COMMON_PASSWORDS.has(lower) || /^(.)\1+$/.test(pwd) || PASSWORD_SEQUENCES.some(s => s.includes(lower))) return 'weak';
+    const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(re => re.test(pwd)).length;
+    if ((pwd.length >= 10 && kinds >= 3) || (pwd.length >= 14 && kinds >= 2)) return 'strong';
+    if (pwd.length >= 8 && kinds >= 2) return 'medium';
+    return 'weak';
+}
+
+function updatePasswordStrength(pwd) {
+    const hint = document.getElementById('cfg-password-hint');
+    const el = document.getElementById('cfg-password-strength');
+    if (!hint || !el) return;
+    const level = pwd ? passwordStrength(pwd) : '';
+    hint.classList.toggle('hidden', !!level);
+    el.classList.toggle('hidden', !level);
+    el.className = el.className.replace(/\btext-(red|amber|primary)-500\b/g, '').trim();
+    if (!level) return;
+    el.classList.add(PASSWORD_STRENGTH_COLOR[level]);
+    el.textContent = t(`config_password_${level}`);
+}
+
 function savePasswordConfig() {
     const input = document.getElementById('cfg-password');
     if (input.dataset.masked === '1') {
@@ -606,6 +644,10 @@ function savePasswordConfig() {
         return;
     }
     const newPwd = input.value.trim();
+    if (newPwd && passwordStrength(newPwd) === 'short') {
+        showStatus('cfg-password-status', 'config_password_short', true);
+        return;
+    }
     const btn = document.getElementById('cfg-password-save');
     btn.disabled = true;
     fetch('/config', {
@@ -617,6 +659,7 @@ function savePasswordConfig() {
     .then(data => {
         console.log('[Password Config] Response:', data); // Debug
         if (data.status === 'success') {
+            updatePasswordStrength('');
             if (newPwd) {
                 showStatus('cfg-password-status', 'config_password_changed', false);
                 // Mark as masked so user needs to re-enter to change again

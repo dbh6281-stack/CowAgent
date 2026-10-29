@@ -261,7 +261,8 @@
                                                           focus:outline-none focus:border-primary-500 font-mono transition-colors
                                                           cfg-key-masked"
                                                    data-masked="1">
-                                            <p class="text-xs text-slate-400 dark:text-slate-500 mt-1.5" data-i18n="config_password_hint">留空则不启用密码保护</p>
+                                            <p id="cfg-password-hint" class="text-xs text-slate-400 dark:text-slate-500 mt-1.5" data-i18n="config_password_hint">至少 6 位，留空则不启用密码保护</p>
+                                            <p id="cfg-password-strength" class="text-xs mt-1.5 hidden"></p>
                                         </div>
                                         <div class="flex items-center justify-end gap-3 pt-1">
                                             <span id="cfg-password-status" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
