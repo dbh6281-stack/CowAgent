@@ -28,6 +28,10 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
   const activeModel = state?.model || state?.global.model || ''
   const activeProvider = state?.provider || state?.global.provider || ''
   const providers = state?.providers || []
+  // Display name only; the chip tip and every request keep the real model name.
+  const modelAlias = model
+    ? providers.find((p) => p.id === (state?.provider || activeProvider))?.labels?.[model] || ''
+    : ''
 
   const close = useCallback(() => setOpenMenu(null), [setOpenMenu])
 
@@ -55,7 +59,7 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
   return (
     <ComposerChip
       icon={<Cpu size={13} />}
-      label={model || t('model_unset')}
+      label={modelAlias || model || t('model_unset')}
       tip={tip}
       open={open}
       onToggle={toggle}
@@ -78,6 +82,7 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
           </div>
           {(p.models || []).map((m) => {
             const active = m === activeModel && p.id === activeProvider
+            const alias = p.labels?.[m]
             return (
               <button
                 key={`${p.id}:${m}`}
@@ -88,7 +93,14 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
                 }`}
               >
                 <Cpu size={13} className="shrink-0" />
-                <span className="flex-1 min-w-0 text-[13px] truncate">{m}</span>
+                {alias ? (
+                  <span className="flex-1 min-w-0" title={m}>
+                    <span className="block text-[13px] truncate">{alias}</span>
+                    <span className="block text-[11px] text-content-tertiary truncate font-mono">{m}</span>
+                  </span>
+                ) : (
+                  <span className="flex-1 min-w-0 text-[13px] truncate">{m}</span>
+                )}
                 {active && <Check size={14} className="shrink-0" />}
               </button>
             )

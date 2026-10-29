@@ -91,6 +91,13 @@ function _renderInputPlaceholder() {
     input.placeholder = t(sharedConversation() ? 'input_placeholder_team' : 'input_placeholder');
 }
 
+/** Display name a custom provider gives one of its models, or ''. */
+function _modelAlias(providers, providerId, model) {
+    if (!model) return '';
+    const group = (providers || []).find(p => p.id === providerId);
+    return (group && group.labels && group.labels[model]) || '';
+}
+
 function _renderModelChip() {
     const btn = _modelBtn();
     if (!btn || !_sessCfg) return;
@@ -106,9 +113,11 @@ function _renderModelChip() {
     }
     const state = _sessCfg.model || {};
     const model = state.model || '';
+    const activeProvider = state.provider || (state.global && state.global.provider) || '';
 
+    // The chip shows the display name; the tooltip keeps the real model name.
     const label = document.getElementById('model-selector-label');
-    if (label) label.textContent = model || t('model_unset');
+    if (label) label.textContent = _modelAlias(state.providers, activeProvider, model) || model || t('model_unset');
 
     const tip = t('model_tip').replace('{name}', model || t('model_unset'))
         + (state.source === 'global' ? ` · ${t('model_follow_global')}` : '')
@@ -236,12 +245,17 @@ function renderModelMenu() {
             const arg = (active && pinned)
                 ? 'null, null'
                 : `'${_wsAttr(p.id)}','${_wsAttr(m)}'`;
+            const alias = _modelAlias([p], p.id, m);
+            const body = alias
+                ? `<span class="composer-menu-name">${escapeHtml(alias)}</span>
+                   <span class="composer-menu-desc break-all">${escapeHtml(m)}</span>`
+                : `<span class="composer-menu-name">${escapeHtml(m)}</span>`;
             parts.push(`
                 <button class="composer-menu-item ${active ? 'active' : ''}"
                         onclick="selectSessionModel(${arg})">
                     <i class="fas fa-microchip"></i>
                     <span class="composer-menu-body">
-                        <span class="composer-menu-name">${escapeHtml(m)}</span>
+                        ${body}
                     </span>
                     ${active ? '<i class="fas fa-check composer-menu-check"></i>' : ''}
                 </button>`);

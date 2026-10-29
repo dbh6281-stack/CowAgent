@@ -2278,6 +2278,8 @@ function renderCatalogRows(prefix) {
     const draft = _catalogRows(prefix);
     const rows = document.getElementById(prefix + '-catalog-rows');
     if (!rows) return;
+    // Display names are offered for custom providers only.
+    const withAlias = prefix === 'custom-provider';
     rows.innerHTML = draft.map((entry, idx) => `
         <div class="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-2.5">
             <div class="flex items-center gap-2 mb-2">
@@ -2287,6 +2289,13 @@ function renderCatalogRows(prefix) {
                        class="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600
                               bg-white dark:bg-white/5 text-xs text-slate-800 dark:text-slate-100
                               focus:outline-none focus:border-primary-500 font-mono transition-colors">
+                ${withAlias ? `<input type="text" value="${escapeHtml(entry.alias || '')}" maxlength="64"
+                       placeholder="${escapeHtml(t('models_catalog_alias_ph'))}"
+                       title="${escapeHtml(t('models_catalog_alias_tip'))}"
+                       oninput="updateCatalogRow('${prefix}', ${idx}, 'alias', this.value)"
+                       class="w-[38%] flex-shrink-0 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600
+                              bg-white dark:bg-white/5 text-xs text-slate-800 dark:text-slate-100
+                              focus:outline-none focus:border-primary-500 transition-colors">` : ''}
                 <button type="button" onclick="removeCatalogRow('${prefix}', ${idx})"
                         title="${escapeHtml(t('delete'))}"
                         class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded
@@ -2342,8 +2351,8 @@ function renderCatalogRows(prefix) {
 function updateCatalogRow(prefix, idx, field, rawValue) {
     const entry = _catalogRows(prefix)[idx];
     if (!entry) return;
-    if (field === 'name') {
-        entry.name = rawValue;
+    if (field === 'name' || field === 'alias') {
+        entry[field] = rawValue;
         return;
     }
     // Numeric fields: keep "" (meaning "unset") rather than storing NaN/0.
@@ -2425,6 +2434,7 @@ function collectCatalogPayload(prefix) {
             // to auto-detection", whereas 0 would be an invalid window.
             if (!Number.isNaN(cw) && cw > 0) out.context_window = cw;
             if (!Number.isNaN(mo) && mo > 0) out.max_output_tokens = mo;
+            _setCatalogAlias(out, e.alias);
             return out;
         });
 }
@@ -2451,6 +2461,7 @@ function fillCatalogForProvider(prefix, providerId) {
         capabilities: (e.capabilities || []).slice(),
         context_window: e.context_window || '',
         max_output_tokens: e.max_output_tokens || '',
+        alias: e.alias || '',
     }));
     // The pick list lives in this modal for every vendor; drop the previous
     // vendor's candidates so switching providers cannot leave them open.
@@ -2476,8 +2487,15 @@ function _normalizeEntries(rows) {
             const mo = parseInt(e.max_output_tokens, 10);
             if (!Number.isNaN(cw) && cw > 0) out.context_window = cw;
             if (!Number.isNaN(mo) && mo > 0) out.max_output_tokens = mo;
+            _setCatalogAlias(out, e.alias);
             return out;
         });
+}
+
+/** Keep a display name only when it says something the model name doesn't. */
+function _setCatalogAlias(out, rawAlias) {
+    const alias = (rawAlias || '').trim();
+    if (alias && alias !== out.name) out.alias = alias;
 }
 
 function setCatalogSectionOpen(prefix, open) {
