@@ -26,3 +26,17 @@ def test_reply_image_removes_temp_file_when_vision_request_fails(tmp_path, monke
 
     assert reply.type.name == "ERROR"
     assert not image.exists()
+
+
+def test_reply_image_invalid_path_preserves_the_error_reply(monkeypatch):
+    monkeypatch.setattr(chatgpt_module, "conf", lambda: {})
+    bot = chatgpt_module.ChatGPTBot.__new__(chatgpt_module.ChatGPTBot)
+    bot._bot_type = ""
+    bot._http_client = _FailingClient()
+    bot._use_responses_for_plain_calls = lambda: False
+    context = _ImageContext("unused")
+    context.content = None
+
+    reply = bot.reply_image(context)
+
+    assert reply.type.name == "ERROR"
