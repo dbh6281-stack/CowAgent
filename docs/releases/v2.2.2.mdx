@@ -61,7 +61,7 @@ When the main model supports vision, images are passed to it directly as multimo
 
 The Config page has a new **Integrations** tab, in both the Web console and the desktop client, that brings guest pages, the Chat API, and access addresses together:
 
-- **Addresses**: change the listen IP and port online. The service restarts on the new address and falls back to the previous one if the new address is unavailable. This machine's LAN addresses are shown, and you can set a display address for share links and embed code.
+- **Addresses**: change the listen IP and port online. The service switches to the new address without a restart and falls back to the previous one if the new address is unavailable. This machine's LAN addresses are shown, and you can set a display address for share links and embed code.
 - **HTTPS and domains**: the console can serve HTTPS directly once a certificate is configured, and the docs now cover deployment behind an nginx reverse proxy (Thanks @anshlakhera048 #3774, @592774447 #3768).
 - **Login protection**: a client that enters the wrong password repeatedly is locked out temporarily. Local access is counted separately, so password guessing from outside never locks you out on this machine.
 - **Chat API**: concurrent requests in the same conversation are processed in order (Thanks @rudycelekli #3751).

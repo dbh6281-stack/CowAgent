@@ -90,8 +90,8 @@ const IntegrationsTab: React.FC<{
   const needsPassword = changed && !state?.password_set && !LOCAL_HOST_RE.test(targetHost)
   const shownProblem = listenProblem || (needsPassword ? 'password_required' : '')
 
-  /** The server answers first and restarts a moment later, on the new address
-   *  or, if that fails, back on the old one. */
+  /** The server answers first and moves a moment later, to the new address
+   *  or, if that fails, back to the old one. */
   const settle = async (): Promise<IntegrationsState | null> => {
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, i ? 500 : 1500))

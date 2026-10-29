@@ -197,8 +197,8 @@ function saveListenHost() {
         btn.textContent = text || t('config_listen_apply');
         if (text) setTimeout(() => { btn.textContent = t('config_listen_apply'); }, 2000);
     };
-    // The server answers first and restarts a moment later, on the new
-    // address or, if that fails, back on the old one.
+    // The server answers first and moves a moment later, to the new
+    // address or, if that fails, back to the old one.
     const settle = (tries) => fetch('/api/integrations').then(r => r.json()).then(d => {
         if (d.status !== 'success') throw new Error();
         _applyIntegrations(d);
