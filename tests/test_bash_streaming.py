@@ -2,14 +2,17 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from agent.tools.bash.bash import Bash
+from agent.tools.read.read import Read
 
 
 posix_only = pytest.mark.skipif(Bash._IS_WIN, reason="POSIX shell command")
@@ -285,3 +288,28 @@ def test_windows_background_process_holding_pipe_does_not_hang(tmp_path):
         assert pid_file.exists()
     finally:
         _windows_kill_pid_file(pid_file)
+
+
+@windows_only
+def test_windows_full_output_log_keeps_the_commands_line_breaks(tmp_path, monkeypatch):
+    # cmd ends every line with CRLF. Saved in text mode, each one became
+    # CR CR LF, so the read tool showed a blank line after every line and the
+    # line numbers in the truncation notice pointed at the wrong part of the log.
+    original = tempfile.NamedTemporaryFile
+
+    def log_in_tmp_path(*args, **kwargs):
+        kwargs["dir"] = str(tmp_path)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", log_in_tmp_path)
+    tool = Bash({"cwd": str(tmp_path)})
+
+    result = tool.execute({"command": "for /L %i in (1,1,2100) do @echo row %i", "timeout": 60})
+
+    assert result.status == "success", result.result
+    path = result.result["details"]["full_output_path"]
+    assert Path(path).read_bytes() == b"".join(b"row %d\r\n" % i for i in range(1, 2101))
+    start = int(re.search(r"\[Showing lines (\d+)-", result.result["output"]).group(1))
+    page = Read({"cwd": str(tmp_path)}).execute({"path": path, "offset": start, "limit": 1}).result
+    assert page["content"].startswith(f"{start}|row {start}\n")
+    assert page["total_lines"] == 2100

@@ -338,7 +338,9 @@ SAFETY:
                 # cp936/GBK on Chinese Windows), which raises UnicodeEncodeError
                 # for output containing emoji or other non-locale characters and
                 # would discard an otherwise successful command result.
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log', prefix='bash-', encoding='utf-8') as f:
+                # newline='' writes the line breaks as the command printed
+                # them; on Windows, text mode turns each CRLF into CR CR LF.
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log', prefix='bash-', encoding='utf-8', newline='') as f:
                     f.write(output)
                     temp_file_path = f.name
 
