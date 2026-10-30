@@ -299,6 +299,8 @@ export const ModelCatalogEditor: React.FC<ModelCatalogEditorProps> = ({
                       />
                       {isCustom && (
                         <TextInput
+                          // The ! beats TextInput's own w-full, which comes
+                          // later in the generated CSS.
                           className="!w-[38%] flex-shrink-0 !py-1.5 text-xs"
                           value={row.alias || ''}
                           maxLength={64}
