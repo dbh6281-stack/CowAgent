@@ -959,16 +959,29 @@ const SearchCard: React.FC<{
   keyBusy,
 }) => {
   const [strategy, setStrategy] = useState<string>(state.strategy || 'auto')
-  const [provider, setProvider] = useState<string>(state.fixed_provider || state.current_provider || '')
+  const configuredIds = useMemo(
+    () => state.configured_providers || state.providers.filter((p) => p.configured).map((p) => p.id),
+    [state.configured_providers, state.providers]
+  )
+  const [provider, setProvider] = useState<string>(() => {
+    const saved = state.fixed_provider || state.current_provider || ''
+    return configuredIds.includes(saved) ? saved : configuredIds[0] || ''
+  })
   // The dedicated-key provider currently open in the credential modal, or null.
   const [keyProvider, setKeyProvider] = useState<SearchProviderMeta | null>(null)
   // Two-step add flow: when more than one provider is unconfigured, first show
   // a picker; a single unconfigured one opens its editor directly.
   const [pickerOpen, setPickerOpen] = useState(false)
 
+  // Only configured providers can be pinned; an unconfigured one would
+  // silently fall back. Same as the web console.
   const providerOptions = useMemo(
-    () => state.providers.map((p) => ({ value: p.id, label: localizedLabel(p.label) })),
-    [state.providers]
+    () =>
+      configuredIds.map((id) => {
+        const meta = state.providers.find((p) => p.id === id)
+        return { value: id, label: meta ? localizedLabel(meta.label) : id }
+      }),
+    [configuredIds, state.providers]
   )
 
   // Every backend provider: configured chips, unconfigured ones behind "+ add".
