@@ -53,6 +53,29 @@ _META_HTTP_EQUIV_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Charset labels that browsers decode with a superset codec, per the WHATWG
+# Encoding Standard (https://encoding.spec.whatwg.org/#names-and-labels).
+# Pages rely on the superset (gb2312 pages use GBK characters, ISO-8859-1
+# pages use windows-1252 quotes), and Python's narrower codec garbles them.
+# All of the standard's labels for these encodings are listed, including ones
+# Python doesn't know at all, such as x-sjis and windows-874.
+_BROWSER_CHARSETS = {
+    label: codec
+    for codec, labels in (
+        ("gb18030", "chinese csgb2312 csiso58gb231280 gb2312 gb_2312 gb_2312-80 gbk iso-ir-58 x-gbk"),
+        ("cp932", "csshiftjis ms932 ms_kanji shift-jis shift_jis sjis windows-31j x-sjis"),
+        ("cp949", "cseuckr csksc56011987 euc-kr iso-ir-149 korean ks_c_5601-1987 ks_c_5601-1989 ksc5601 "
+                  "ksc_5601 windows-949"),
+        ("big5hkscs", "big5 big5-hkscs cn-big5 csbig5 x-x-big5"),
+        ("cp1252", "ansi_x3.4-1968 ascii cp1252 cp819 csisolatin1 ibm819 iso-8859-1 iso-ir-100 iso8859-1 "
+                   "iso88591 iso_8859-1 iso_8859-1:1987 l1 latin1 us-ascii windows-1252 x-cp1252"),
+        ("cp1254", "cp1254 csisolatin5 iso-8859-9 iso-ir-148 iso8859-9 iso88599 iso_8859-9 iso_8859-9:1989 "
+                   "l5 latin5 windows-1254 x-cp1254"),
+        ("cp874", "dos-874 iso-8859-11 iso8859-11 iso885911 tis-620 windows-874"),
+    )
+    for label in labels.split()
+}
+
 
 def _tools_web_fetch_conf() -> dict:
     """Return the tools.web_fetch config block (dict-like)."""
@@ -101,6 +124,11 @@ def _extract_charset_from_html_meta(raw_bytes: bytes) -> Optional[str]:
     if m:
         return m.group(1).decode("ascii", errors="ignore")
     return None
+
+
+def _browser_charset(label: str) -> str:
+    """The codec a browser decodes a charset label with, or the label itself."""
+    return _BROWSER_CHARSETS.get(label.lower(), label)
 
 
 def _get_url_suffix(url: str) -> str:
@@ -473,7 +501,12 @@ class WebFetch(BaseTool):
     def _parse_text(self, file_path: str, charset: Optional[str] = None) -> str:
         """Read plain text, trying a declared charset before existing fallbacks."""
         encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "latin-1"]
-        if charset:
+        if charset and charset.lower() in _BROWSER_CHARSETS:
+            # Downloads with a legacy label are often UTF-8 anyway, and the browser
+            # codec would read much of that as garbage, so UTF-8 goes first. Real
+            # legacy text is rarely valid UTF-8.
+            encodings.insert(1, _BROWSER_CHARSETS[charset.lower()])
+        elif charset:
             encodings.insert(0, charset)
         for enc in encodings:
             try:
@@ -526,18 +559,21 @@ class WebFetch(BaseTool):
 
     @staticmethod
     def _detect_encoding(response: requests.Response) -> str:
-        """Detect response encoding with priority: Content-Type header > HTML meta > chardet > utf-8."""
+        """Detect response encoding with priority: Content-Type header > HTML meta > chardet > utf-8.
+
+        The detected label is mapped to the codec a browser decodes it with.
+        """
         # 1. Check Content-Type header for explicit charset
         content_type = response.headers.get("Content-Type", "")
         charset = _extract_charset_from_content_type(content_type)
         if charset:
-            return charset
+            return _browser_charset(charset)
 
         # 2. Scan raw bytes for HTML meta charset declaration
         raw = response.content[:4096]
         charset = _extract_charset_from_html_meta(raw)
         if charset:
-            return charset
+            return _browser_charset(charset)
 
         # 3. Use apparent_encoding (chardet-based detection) if confident enough
         apparent = response.apparent_encoding
@@ -546,7 +582,7 @@ class WebFetch(BaseTool):
             # Trust CJK / Windows encodings detected by chardet
             trusted_prefixes = ("utf", "gb", "big5", "euc", "shift_jis", "iso-2022", "windows", "ascii")
             if any(apparent_lower.startswith(p) for p in trusted_prefixes):
-                return apparent
+                return _browser_charset(apparent)
 
         # 4. Fallback
         return "utf-8"
