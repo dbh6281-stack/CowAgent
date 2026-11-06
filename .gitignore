@@ -8,6 +8,7 @@ venv*
 *.pyc
 python
 config.json
+config.json.bak
 QR.png
 nohup.out
 tmp
