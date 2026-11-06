@@ -1749,6 +1749,31 @@ class ConversationStore:
             detail["full_output"] = candidates[0]
         return detail
 
+    def load_run_usage(self, session_id: str, run_id: str) -> Optional[Dict[str, Any]]:
+        """Latest cumulative provider snapshot for exactly one delegated run.
+
+        Relay sessions are reused, so never fall back to another run's tail.
+        Snapshots already include earlier model calls and must not be summed.
+        """
+        if not session_id or not run_id:
+            return None
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    "SELECT extras FROM messages "
+                    "WHERE agent_id = ? AND session_id = ? AND run_id = ? "
+                    "AND role = 'assistant' ORDER BY seq DESC",
+                    (self._agent_id, session_id, run_id),
+                )
+                for (extras,) in rows:
+                    usage = _usage_from_extras(extras)
+                    if usage is not None:
+                        return usage
+            finally:
+                conn.close()
+        return None
+
     def load_run_steps(self, session_id: str, run_id: str) -> List[Dict[str, Any]]:
         """UI steps for exactly one delegated run, never the relay session's tail.
 

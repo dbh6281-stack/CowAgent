@@ -94,6 +94,25 @@ def test_history_usage_uses_exact_run_latest_snapshot(stored):
     assert store.load_run_usage('other', 'run1') is None
 
 
+def test_run_usage_is_latest_snapshot_and_isolated_by_agent(stored):
+    store, session = stored
+    for usage in ({'prompt_tokens': 40}, {'prompt_tokens': 100}, None):
+        store.append_messages(session, [{
+            'role': 'assistant', 'content': [{'type': 'text', 'text': 'answer'}],
+            'run_id': 'run1', 'extras': {'usage': usage},
+        }])
+    # A later non-assistant record must not override provider accounting.
+    store.append_messages(session, [{
+        'role': 'user', 'content': [{'type': 'text', 'text': 'task'}],
+        'run_id': 'run1', 'extras': {'usage': {'prompt_tokens': 999}},
+    }])
+    assert store.load_run_usage(session, 'run1') == {'prompt_tokens': 100}
+    other = ConversationStore(store._db_path, agent_id='other')
+    assert other.load_run_usage(session, 'run1') is None
+    assert store.load_run_usage(session, '') is None
+    assert store.load_run_usage('', 'run1') is None
+
+
 def test_missing_or_legacy_trace_leaves_answer_available(stored):
     for result in ("not json", "[]", json.dumps({"content": "legacy answer"}), handoff(run="gone")["result"]):
         step = {"name": "agent_delegate", "result": result}
