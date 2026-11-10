@@ -660,28 +660,6 @@ class Agent:
                 system_tokens, tools_tokens, history_tokens,
             )
 
-        # Surface the last turn's real provider usage as its own field, so the
-        # UI can show per-request input/output tokens rather than only the
-        # context occupancy. `used` above is the input side (prompt_tokens);
-        # this carries output/completion and the cache-hit split too. Omitted
-        # when the provider never reported usage (non-OpenAI-compatible paths).
-        last_turn = None
-        if isinstance(last_usage, dict):
-            try:
-                lt_in = int(last_usage.get("prompt_tokens") or 0)
-                lt_out = int(last_usage.get("completion_tokens") or 0)
-                lt_total = int(last_usage.get("total_tokens") or 0)
-                if lt_in or lt_out or lt_total:
-                    last_turn = {
-                        "input": lt_in,
-                        "output": lt_out,
-                        "total": lt_total or (lt_in + lt_out),
-                        "cache_hit": int(last_usage.get("prompt_cache_hit_tokens") or 0),
-                        "cache_miss": int(last_usage.get("prompt_cache_miss_tokens") or 0),
-                    }
-            except (TypeError, ValueError):
-                last_turn = None
-
         return {
             "available": True,
             "estimated": estimated,
@@ -690,7 +668,6 @@ class Agent:
             "limit": limit,
             "used": used,
             "messages": len(self.messages),
-            "last_turn": last_turn,
             "breakdown": {
                 "system": system_slice,
                 "tools": tools_slice,

@@ -502,7 +502,6 @@ function startSSE(requestId, loadingEl, timestamp, replayItems, resume) {
                 if (item.usage) {
                     ensureBotEl();
                     attachMessageUsage(botEl, item.usage);
-                    renderTurnUsageBadge(botEl, item.usage);
                 }
                 closeBubble();
                 speakerStack.pop();
@@ -822,26 +821,6 @@ function startSSE(requestId, loadingEl, timestamp, replayItems, resume) {
                         }
                         if (prev && !prev.dataset.seq) {
                             prev.dataset.seq = item.user_seq;
-                        }
-                    }
-                }
-                // Show this turn's real token usage under the bubble. Populated
-                // from the provider usage the backend attaches to the done
-                // event; omitted when the provider reported none.
-                if (targetBotEl && item.usage) {
-                    if (typeof renderTurnUsageBadge === 'function') {
-                        renderTurnUsageBadge(targetBotEl, item.usage);
-                    } else {
-                        // Fallback if render.js hasn't loaded the shared helper.
-                        const u = item.usage;
-                        const fmt = (n) => (n == null ? '0' : (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)));
-                        const badge = targetBotEl.querySelector('.turn-tokens');
-                        if (badge) {
-                            const parts = ['↑' + fmt(u.input), '↓' + fmt(u.output)];
-                            if (u.cache_hit) parts.push('⚡' + fmt(u.cache_hit));
-                            if (u.cache_miss) parts.push('⊘' + fmt(u.cache_miss));
-                            badge.textContent = parts.join(' ');
-                            badge.style.display = '';
                         }
                     }
                 }

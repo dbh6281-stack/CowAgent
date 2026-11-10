@@ -17,7 +17,6 @@ from agent.memory.conversation_store import ConversationStore
 from agent.protocol.agent_stream import (
     AgentStreamExecutor,
     _cache_hit_tokens,
-    _cache_miss_tokens,
     _nonnegative_int,
 )
 from agent.protocol.step_writer import StepWriter
@@ -151,18 +150,13 @@ def test_own_usage_recovers_old_team_snapshot_without_subtracting_from_own_snaps
     assert own_usage(recovered, [child]) == recovered
 
 
-def test_cache_token_helpers_reject_malformed_provider_values():
+def test_cache_token_helper_rejects_malformed_provider_values():
     # A provider that sends an infinite/negative cache count must not leak a
-    # bogus number into the badge, and must not raise out of the helper.
+    # bogus number into the usage figure, and must not raise out of the helper.
     assert _cache_hit_tokens({"prompt_cache_hit_tokens": float("inf")}) == 0
     assert _cache_hit_tokens({"prompt_cache_hit_tokens": -20}) == 0
-    assert _cache_miss_tokens({"prompt_cache_miss_tokens": -50}) == 0
-    assert _cache_miss_tokens(
-        {"prompt_cache_miss_tokens": float("inf"), "prompt_tokens": 100}
-    ) == 0
-    # Well-formed values keep working, including the subtraction fallback.
+    # Well-formed values keep working.
     assert _cache_hit_tokens({"prompt_tokens_details": {"cached_tokens": 600}}) == 600
-    assert _cache_miss_tokens({"prompt_tokens": 1000}, hit=600) == 400
 
 
 class _UnreportedUsageModel:
